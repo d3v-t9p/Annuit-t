@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="Kostenloser Annuitätendarlehen-Rechner mit dynamischem Tilgungsplan, Sondertilgungen, variablem Zinssatz, Grafiken und Export als Excel und PDF." />
+  <title>Annuitätendarlehen-Rechner</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="site-header">
+    <div class="container">
+      <h1>Annuitätendarlehen&#8209;Rechner</h1>
+      <p class="subtitle">Tilgungsplan berechnen &middot; Sondertilgungen &amp; variable Zinssätze &middot; Grafiken &middot; Export als Excel / PDF</p>
+    </div>
+  </header>
+
+  <main class="container">
+
+    <!-- ====================== EINGABEN ====================== -->
+    <section class="card" id="inputs-card" aria-labelledby="h-inputs">
+      <h2 id="h-inputs">1. Eingaben</h2>
+      <div class="grid-inputs">
+        <div class="field">
+          <label for="principal">Kreditsumme (Restschuld)</label>
+          <div class="input-affix">
+            <input type="text" id="principal" inputmode="decimal" value="250.000" autocomplete="off" />
+            <span class="affix">€</span>
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="ratePct">Sollzinssatz (p.&nbsp;a.)</label>
+          <div class="input-affix">
+            <input type="text" id="ratePct" inputmode="decimal" value="3,5" autocomplete="off" />
+            <span class="affix">%</span>
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="monthlyPayment">Monatliche Rate</label>
+          <div class="input-affix">
+            <input type="text" id="monthlyPayment" inputmode="decimal" value="1.200" autocomplete="off" />
+            <span class="affix">€</span>
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="startMonth">Erste Rate (Monat)</label>
+          <input type="month" id="startMonth" value="2026-06" />
+        </div>
+      </div>
+
+      <details class="helper">
+        <summary>Rate aus anfänglicher Tilgung berechnen (optional)</summary>
+        <div class="helper-body">
+          <p class="hint">Wenn du die monatliche Rate nicht kennst, kannst du sie aus dem anfänglichen Tilgungssatz berechnen lassen (klassische Bankangabe, z.&nbsp;B. „2&nbsp;% anfängliche Tilgung").</p>
+          <div class="helper-row">
+            <div class="field">
+              <label for="initialTilgungPct">Anfängliche Tilgung (p.&nbsp;a.)</label>
+              <div class="input-affix">
+                <input type="text" id="initialTilgungPct" inputmode="decimal" value="2,0" autocomplete="off" />
+                <span class="affix">%</span>
+              </div>
+            </div>
+            <button type="button" id="btnCalcRate" class="btn btn-secondary">Rate berechnen &amp; übernehmen</button>
+          </div>
+        </div>
+      </details>
+
+      <div id="warning" class="warning" hidden></div>
+
+      <div class="actions">
+        <button type="button" id="btnRecalc" class="btn btn-primary">Berechnen</button>
+        <button type="button" id="btnReset" class="btn btn-ghost">Zurücksetzen</button>
+      </div>
+    </section>
+
+    <!-- ====================== ZUSAMMENFASSUNG ====================== -->
+    <section class="card" id="summary-card" aria-labelledby="h-summary">
+      <h2 id="h-summary">2. Zusammenfassung</h2>
+      <div id="summary" class="summary-grid"><!-- gefüllt per JS --></div>
+    </section>
+
+    <!-- ====================== GRAFIKEN ====================== -->
+    <section class="card" id="charts-card" aria-labelledby="h-charts">
+      <h2 id="h-charts">3. Grafische Auswertung</h2>
+      <div class="charts-grid">
+        <figure class="chart-box">
+          <figcaption>Restschuldverlauf</figcaption>
+          <div class="canvas-wrap"><canvas id="chartBalance"></canvas></div>
+        </figure>
+        <figure class="chart-box">
+          <figcaption>Zusammensetzung der Zahlungen (Zins / Tilgung / Sondertilgung)</figcaption>
+          <div class="canvas-wrap"><canvas id="chartComposition"></canvas></div>
+        </figure>
+        <figure class="chart-box">
+          <figcaption>Kumulierte Zinsen &amp; Tilgung</figcaption>
+          <div class="canvas-wrap"><canvas id="chartCumulative"></canvas></div>
+        </figure>
+      </div>
+    </section>
+
+    <!-- ====================== TILGUNGSPLAN ====================== -->
+    <section class="card" id="plan-card" aria-labelledby="h-plan">
+      <h2 id="h-plan">4. Tilgungsplan</h2>
+
+      <div class="plan-toolbar">
+        <div class="view-toggle" role="group" aria-label="Ansicht">
+          <button type="button" class="btn btn-toggle is-active" id="viewMonth" data-view="month">Monatlich</button>
+          <button type="button" class="btn btn-toggle" id="viewYear" data-view="year">Jährlich</button>
+        </div>
+
+        <div class="quick-sonder">
+          <label for="yearlySonderAmount">Jährliche Sondertilgung</label>
+          <div class="input-affix">
+            <input type="text" id="yearlySonderAmount" inputmode="decimal" placeholder="0" autocomplete="off" />
+            <span class="affix">€</span>
+          </div>
+          <button type="button" id="btnApplyYearly" class="btn btn-secondary">Jährlich eintragen</button>
+          <button type="button" id="btnClearSonder" class="btn btn-ghost">Sondertilgungen löschen</button>
+        </div>
+
+        <div class="export-buttons">
+          <button type="button" id="btnXls" class="btn btn-export">Excel (.xlsx)</button>
+          <button type="button" id="btnPdf" class="btn btn-export">PDF</button>
+          <button type="button" id="btnCsv" class="btn btn-export">CSV</button>
+        </div>
+      </div>
+
+      <p class="hint" id="editHint">Tipp: In der <strong>monatlichen</strong> Ansicht kannst du je Periode den <strong>Zinssatz ändern</strong> (gilt ab diesem Monat) und eine <strong>Sondertilgung</strong> eintragen. Der Plan rechnet sich sofort neu.</p>
+
+      <div class="table-scroll">
+        <table id="planTable">
+          <thead id="planHead"></thead>
+          <tbody id="planBody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <footer class="site-footer">
+      <p>Alle Berechnungen erfolgen lokal in deinem Browser – es werden keine Daten übertragen. Die Ergebnisse dienen nur zur Orientierung und stellen keine Finanzberatung dar. Rundungsdifferenzen sind möglich.</p>
+    </footer>
+  </main>
+
+  <!-- Bibliotheken (CDN) -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js"></script>
+
+  <!-- App -->
+  <script src="app.js"></script>
+</body>
+</html>

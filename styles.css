@@ -1,0 +1,281 @@
+/* =========================================================
+   Annuitätendarlehen-Rechner – Styles
+   ========================================================= */
+
+:root {
+  --bg: #f4f6f9;
+  --card-bg: #ffffff;
+  --text: #1f2933;
+  --text-muted: #62707f;
+  --border: #e2e8f0;
+  --accent: #0d7e8c;
+  --accent-dark: #0a626d;
+  --accent-soft: #e3f3f5;
+  --primary: #1f6feb;
+  --danger: #c0392b;
+  --warning-bg: #fff4e5;
+  --warning-border: #f0b35b;
+  --warning-text: #8a5300;
+  --zins: #e07a5f;
+  --tilgung: #0d7e8c;
+  --sonder: #6c5ce7;
+  --shadow: 0 1px 3px rgba(16, 24, 40, 0.08), 0 1px 2px rgba(16, 24, 40, 0.04);
+  --radius: 12px;
+  --radius-sm: 8px;
+  font-size: 16px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0f141a;
+    --card-bg: #181f27;
+    --text: #e6edf3;
+    --text-muted: #9aa7b4;
+    --border: #2a333d;
+    --accent: #2bb3c4;
+    --accent-dark: #1c8e9c;
+    --accent-soft: #143037;
+    --primary: #4d8ef7;
+    --warning-bg: #3a2c12;
+    --warning-border: #8a5300;
+    --warning-text: #ffce8a;
+    --shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+  }
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.5;
+}
+
+.container {
+  width: 100%;
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 0 16px;
+}
+
+/* ---------- Header ---------- */
+.site-header {
+  background: linear-gradient(135deg, var(--accent), var(--accent-dark));
+  color: #fff;
+  padding: 28px 0 26px;
+  box-shadow: var(--shadow);
+}
+.site-header h1 {
+  margin: 0;
+  font-size: clamp(1.5rem, 4vw, 2.1rem);
+  letter-spacing: -0.02em;
+}
+.site-header .subtitle {
+  margin: 6px 0 0;
+  opacity: 0.92;
+  font-size: 0.95rem;
+}
+
+/* ---------- Cards ---------- */
+.card {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 22px;
+  margin: 22px 0;
+}
+.card h2 {
+  margin: 0 0 18px;
+  font-size: 1.15rem;
+  color: var(--text);
+}
+
+/* ---------- Inputs ---------- */
+.grid-inputs {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 16px;
+}
+.field { display: flex; flex-direction: column; gap: 6px; }
+.field label { font-size: 0.85rem; font-weight: 600; color: var(--text-muted); }
+
+input[type="text"],
+input[type="month"] {
+  width: 100%;
+  padding: 11px 12px;
+  font-size: 1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--card-bg);
+  color: var(--text);
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+input[type="text"]:focus,
+input[type="month"]:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.input-affix { position: relative; display: flex; align-items: center; }
+.input-affix input { padding-right: 34px; }
+.input-affix .affix {
+  position: absolute;
+  right: 12px;
+  color: var(--text-muted);
+  font-size: 0.95rem;
+  pointer-events: none;
+}
+
+/* ---------- Helper / details ---------- */
+.helper {
+  margin-top: 18px;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-sm);
+  padding: 4px 12px;
+}
+.helper summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--accent);
+  padding: 8px 0;
+}
+.helper-body { padding: 6px 0 12px; }
+.helper-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 14px;
+}
+.helper-row .field { min-width: 200px; }
+.hint { font-size: 0.85rem; color: var(--text-muted); margin: 6px 0; }
+
+/* ---------- Buttons ---------- */
+.actions { margin-top: 20px; display: flex; gap: 12px; flex-wrap: wrap; }
+.btn {
+  font: inherit;
+  font-weight: 600;
+  padding: 11px 18px;
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, transform 0.05s;
+}
+.btn:active { transform: translateY(1px); }
+.btn-primary { background: var(--accent); color: #fff; }
+.btn-primary:hover { background: var(--accent-dark); }
+.btn-secondary { background: var(--accent-soft); color: var(--accent-dark); border-color: var(--border); }
+.btn-secondary:hover { filter: brightness(0.97); }
+.btn-ghost { background: transparent; color: var(--text-muted); border-color: var(--border); }
+.btn-ghost:hover { background: var(--bg); }
+.btn-export { background: var(--card-bg); color: var(--accent-dark); border-color: var(--accent); font-size: 0.9rem; padding: 9px 14px; }
+.btn-export:hover { background: var(--accent-soft); }
+
+/* ---------- Warning ---------- */
+.warning {
+  margin-top: 18px;
+  padding: 12px 14px;
+  border-radius: var(--radius-sm);
+  background: var(--warning-bg);
+  border: 1px solid var(--warning-border);
+  color: var(--warning-text);
+  font-size: 0.92rem;
+}
+
+/* ---------- Summary cards ---------- */
+.summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 14px;
+}
+.summary-item {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 14px 16px;
+}
+.summary-item .label { font-size: 0.78rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.03em; }
+.summary-item .value { font-size: 1.25rem; font-weight: 700; margin-top: 4px; }
+.summary-item.accent .value { color: var(--accent); }
+.summary-item.zins .value { color: var(--zins); }
+
+/* ---------- Charts ---------- */
+.charts-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 20px;
+}
+.chart-box { margin: 0; }
+.chart-box figcaption { font-size: 0.88rem; font-weight: 600; color: var(--text-muted); margin-bottom: 8px; }
+.canvas-wrap { position: relative; height: 260px; }
+
+/* ---------- Plan toolbar ---------- */
+.plan-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+.view-toggle { display: inline-flex; border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden; }
+.btn-toggle { background: var(--card-bg); color: var(--text-muted); border-radius: 0; border: none; padding: 9px 16px; }
+.btn-toggle.is-active { background: var(--accent); color: #fff; }
+.quick-sonder { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.quick-sonder label { font-size: 0.85rem; font-weight: 600; color: var(--text-muted); }
+.quick-sonder .input-affix { width: 120px; }
+.export-buttons { display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* ---------- Table ---------- */
+.table-scroll { overflow-x: auto; border: 1px solid var(--border); border-radius: var(--radius-sm); }
+#planTable { width: 100%; border-collapse: collapse; font-size: 0.9rem; min-width: 720px; }
+#planTable thead th {
+  position: sticky;
+  top: 0;
+  background: var(--accent);
+  color: #fff;
+  text-align: right;
+  padding: 10px 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+#planTable thead th:first-child,
+#planTable thead th:nth-child(2) { text-align: left; }
+#planTable tbody td { padding: 7px 12px; text-align: right; border-bottom: 1px solid var(--border); white-space: nowrap; }
+#planTable tbody td:first-child,
+#planTable tbody td:nth-child(2) { text-align: left; }
+#planTable tbody tr:nth-child(even) { background: var(--bg); }
+#planTable tbody tr.year-end td { border-bottom: 2px solid var(--accent-soft); }
+#planTable tbody tr.year-row { font-weight: 600; }
+
+.cell-input {
+  width: 90px;
+  padding: 5px 7px;
+  font-size: 0.85rem;
+  text-align: right;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--card-bg);
+  color: var(--text);
+}
+.cell-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
+.cell-input.rate-input { width: 72px; }
+.cell-input.has-override { border-color: var(--sonder); background: color-mix(in srgb, var(--sonder) 8%, var(--card-bg)); }
+
+/* ---------- Footer ---------- */
+.site-footer { padding: 18px 0 40px; }
+.site-footer p { font-size: 0.8rem; color: var(--text-muted); margin: 0; }
+
+/* ---------- Responsive ---------- */
+@media (max-width: 640px) {
+  .card { padding: 16px; }
+  .plan-toolbar { flex-direction: column; align-items: stretch; }
+  .export-buttons, .quick-sonder { justify-content: flex-start; }
+}
