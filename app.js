@@ -20,20 +20,50 @@ const fmtPct = new Intl.NumberFormat('de-DE', {
 
 const round2 = (x) => Math.round((x + Number.EPSILON) * 100) / 100;
 
-/** Wandelt Nutzereingaben ("200.000,50", "200000.5", "3,5") in eine Zahl um. */
-function parseNum(str) {
-  if (typeof str === 'number') return str;
-  if (str === null || str === undefined) return 0;
-  let s = String(str).trim().replace(/\s/g, '').replace(/€/g, '').replace(/%/g, '');
-  if (s === '') return 0;
-  const hasComma = s.indexOf(',') > -1;
-  const hasDot = s.indexOf('.') > -1;
-  if (hasComma && hasDot) {
-    // Deutsches Format: Punkt = Tausender, Komma = Dezimal
-    s = s.replace(/\./g, '').replace(',', '.');
-  } else if (hasComma) {
-    s = s.replace(',', '.');
+/**
+ * Wandelt Nutzereingaben robust in eine Zahl um – deutsches Format bevorzugt.
+ * "1.200"     -> 1200     (Punkt = Tausender)
+ * "250.000"   -> 250000
+ * "1.200,50"  -> 1200.5   (Komma = Dezimal)
+ * "3,5"       -> 3.5
+ * "3.5"       -> 3.5      (einzelner Punkt + 1–2 Nachkommastellen = Dezimal)
+ * "1,200.50"  -> 1200.5   (englisches Format wird ebenfalls erkannt)
+ */
+function parseNum(input) {
+  if (typeof input === 'number') return input;
+  if (input === null || input === undefined) return 0;
+  let s = String(input).trim().replace(/\s/g, '').replace(/[€%]/g, '');
+  s = s.replace(/[^0-9.,-]/g, '');
+  if (s === '' || s === '-') return 0;
+
+  const lastComma = s.lastIndexOf(',');
+  const lastDot = s.lastIndexOf('.');
+  let decimalSep = null; // ',' | '.' | null (kein Dezimaltrenner -> alles Tausender)
+
+  if (lastComma > -1 && lastDot > -1) {
+    // Der zuletzt stehende Trenner ist der Dezimaltrenner.
+    decimalSep = lastComma > lastDot ? ',' : '.';
+  } else if (lastComma > -1) {
+    // Nur Kommas: mehrere -> Tausender; eines -> Dezimal (deutsch).
+    decimalSep = s.indexOf(',') === lastComma ? ',' : null;
+  } else if (lastDot > -1) {
+    // Nur Punkte: mehrere -> Tausender; eines mit genau 3 Nachstellen -> Tausender, sonst Dezimal.
+    if (s.indexOf('.') !== lastDot) {
+      decimalSep = null;
+    } else {
+      const after = s.length - lastDot - 1;
+      decimalSep = after === 3 ? null : '.';
+    }
   }
+
+  if (decimalSep === ',') {
+    s = s.replace(/\./g, '').replace(',', '.');
+  } else if (decimalSep === '.') {
+    s = s.replace(/,/g, '');
+  } else {
+    s = s.replace(/[.,]/g, '');
+  }
+
   const n = parseFloat(s);
   return isNaN(n) ? 0 : n;
 }
@@ -47,7 +77,7 @@ function monthLabel(d) {
    2. Zustand (State)
 ---------------------------------------------------------- */
 const state = {
-  rateChanges: new Map(),  // monatsindex (0-basiert) -> Zinssatz (% p.a.) ab diesem Monat
+  ratePhases: [],          // [{ from: 'YYYY-MM', ratePct: '3,5' }, ...] zusätzliche Zinsänderungen
   sonderMap: new Map(),    // monatsindex (0-basiert) -> Sondertilgung (€)
   view: 'month',           // 'month' | 'year'
   result: null,            // letztes Berechnungsergebnis
@@ -58,7 +88,39 @@ const MAX_MONTHS = 1200;   // Sicherheitsgrenze (100 Jahre)
 const EPS = 0.005;
 
 /* ----------------------------------------------------------
-   3. Rechenkern
+   3. Eingaben lesen + Zinsänderungen bauen
+---------------------------------------------------------- */
+/** Erzeugt aus den Zinsphasen eine Map: Monatsindex -> Zinssatz (% p.a.). */
+function buildRateChanges(startYear, startMonth) {
+  const map = new Map();
+  for (const p of state.ratePhases) {
+    if (!p.from || p.ratePct === '' || p.ratePct === null || p.ratePct === undefined) continue;
+    const [y, mo] = p.from.split('-').map(Number);
+    if (!y || !mo) continue;
+    let idx = (y - startYear) * 12 + ((mo - 1) - startMonth);
+    if (idx < 0) idx = 0;
+    map.set(idx, parseNum(p.ratePct));
+  }
+  return map;
+}
+
+function readInputs() {
+  const principal = parseNum(document.getElementById('principal').value);
+  const baseRatePct = parseNum(document.getElementById('ratePct').value);
+  const monthlyPayment = parseNum(document.getElementById('monthlyPayment').value);
+  const startStr = document.getElementById('startMonth').value || '2026-06';
+  const [y, mo] = startStr.split('-').map(Number);
+  const startYear = y;
+  const startMonth = (mo || 1) - 1;
+  return {
+    principal, baseRatePct, monthlyPayment, startYear, startMonth,
+    rateChanges: buildRateChanges(startYear, startMonth),
+    sonderMap: state.sonderMap,
+  };
+}
+
+/* ----------------------------------------------------------
+   4. Rechenkern
 ---------------------------------------------------------- */
 function computeSchedule(cfg) {
   const { principal, baseRatePct, monthlyPayment, startYear, startMonth,
@@ -68,7 +130,6 @@ function computeSchedule(cfg) {
   if (principal <= 0)       warnings.push('Bitte eine Kreditsumme größer 0 eingeben.');
   if (monthlyPayment <= 0)  warnings.push('Bitte eine monatliche Rate größer 0 eingeben.');
 
-  // Prüfung: deckt die erste Rate die Zinsen?
   const firstRatePct = rateChanges.has(0) ? rateChanges.get(0) : baseRatePct;
   const firstInterest = principal * (firstRatePct / 100 / 12);
   if (principal > 0 && monthlyPayment > 0 && monthlyPayment <= firstInterest) {
@@ -95,7 +156,6 @@ function computeSchedule(cfg) {
     let principalPortion = round2(monthlyPayment - interest);
     let payment = monthlyPayment;
 
-    // Zinssprung höher als Rate -> negative Tilgung -> abbrechen + warnen
     if (principalPortion <= 0) {
       warnings.push(
         `Ab ${monthLabel(new Date(startYear, startMonth + m, 1))} übersteigen die Zinsen ` +
@@ -103,14 +163,12 @@ function computeSchedule(cfg) {
       break;
     }
 
-    // Letzte reguläre Rate ggf. kappen
     if (principalPortion > balance) {
       principalPortion = round2(balance);
       payment = round2(interest + principalPortion);
     }
     let newBalance = round2(balance - principalPortion);
 
-    // Sondertilgung (nach regulärer Rate)
     let sonder = sonderMap.get(m) || 0;
     if (sonder < 0) sonder = 0;
     if (sonder > newBalance) sonder = newBalance;
@@ -160,23 +218,6 @@ function computeSchedule(cfg) {
 }
 
 /* ----------------------------------------------------------
-   4. Eingaben lesen
----------------------------------------------------------- */
-function readInputs() {
-  const principal = parseNum(document.getElementById('principal').value);
-  const baseRatePct = parseNum(document.getElementById('ratePct').value);
-  const monthlyPayment = parseNum(document.getElementById('monthlyPayment').value);
-  const startStr = document.getElementById('startMonth').value || '2026-06';
-  const [y, mo] = startStr.split('-').map(Number);
-  return {
-    principal, baseRatePct, monthlyPayment,
-    startYear: y, startMonth: (mo || 1) - 1,
-    rateChanges: state.rateChanges,
-    sonderMap: state.sonderMap,
-  };
-}
-
-/* ----------------------------------------------------------
    5. Jährliche Aggregation (für Tabelle & Diagramme)
 ---------------------------------------------------------- */
 function aggregateYearly(rows) {
@@ -195,8 +236,8 @@ function aggregateYearly(rows) {
     o.interest = round2(o.interest + r.interest);
     o.principal = round2(o.principal + r.principal);
     o.sonder = round2(o.sonder + r.sonder);
-    o.balance = r.balance;          // Jahresendwert
-    o.ratePct = r.ratePct;          // Zinssatz zum Jahresende
+    o.balance = r.balance;
+    o.ratePct = r.ratePct;
     o.cumInterest = r.cumInterest;
     o.cumPrincipal = r.cumPrincipal;
   }
@@ -204,7 +245,30 @@ function aggregateYearly(rows) {
 }
 
 /* ----------------------------------------------------------
-   6. Rendering
+   6. Rendering – Zinsphasen-Editor
+---------------------------------------------------------- */
+function renderPhases() {
+  const list = document.getElementById('phaseList');
+  if (!state.ratePhases.length) {
+    list.innerHTML = '<p class="hint empty-phase">Noch keine Zinsänderung – es gilt durchgehend der Sollzinssatz oben.</p>';
+    return;
+  }
+  list.innerHTML = state.ratePhases.map((p, i) => `
+    <div class="phase-row" data-idx="${i}">
+      <span class="phase-label">ab</span>
+      <input type="month" class="phase-from" data-idx="${i}" value="${p.from || ''}" />
+      <span class="phase-eq">→</span>
+      <div class="input-affix phase-rate-wrap">
+        <input type="text" class="phase-rate" inputmode="decimal" data-idx="${i}"
+               value="${p.ratePct || ''}" placeholder="z. B. 3,5" />
+        <span class="affix">%</span>
+      </div>
+      <button type="button" class="btn btn-ghost btn-small phase-remove" data-idx="${i}" title="Entfernen">✕</button>
+    </div>`).join('');
+}
+
+/* ----------------------------------------------------------
+   7. Rendering – Warnungen, Zusammenfassung, Tabelle
 ---------------------------------------------------------- */
 function renderWarnings(warnings) {
   const el = document.getElementById('warning');
@@ -270,30 +334,25 @@ function renderTable(rows) {
     return;
   }
 
-  // Monatliche, editierbare Ansicht
+  // Monatliche Ansicht – Zinssatz nur Anzeige, Sondertilgung editierbar
   head.innerHTML = `<tr>
-    <th>Nr.</th><th>Monat</th><th>Zinssatz (% p.a.)</th><th>Rate</th>
+    <th>Nr.</th><th>Monat</th><th>Zinssatz</th><th>Rate</th>
     <th>Zinsen</th><th>Tilgung</th><th>Sondertilgung</th><th>Restschuld</th>
   </tr>`;
 
-  const baseRatePct = parseNum(document.getElementById('ratePct').value);
   const html = rows.map((r) => {
-    const rateOverride = state.rateChanges.has(r.idx);
     const sonderOverride = state.sonderMap.has(r.idx) && state.sonderMap.get(r.idx) > 0;
     const isYearEnd = (r.idx % 12) === 11;
-    const rateVal = rateOverride ? fmtPct.format(state.rateChanges.get(r.idx)) : '';
     const sonderVal = sonderOverride ? fmtNum.format(state.sonderMap.get(r.idx)) : '';
     return `<tr class="${isYearEnd ? 'year-end' : ''}">
       <td>${r.idx + 1}</td>
       <td>${monthLabel(r.date)}</td>
-      <td><input class="cell-input rate-input ${rateOverride ? 'has-override' : ''}"
-            type="text" inputmode="decimal" data-kind="rate" data-idx="${r.idx}"
-            value="${rateVal}" placeholder="${fmtPct.format(r.ratePct)}" /></td>
+      <td>${fmtPct.format(r.ratePct)} %</td>
       <td>${fmtEUR.format(r.payment)}</td>
       <td>${fmtEUR.format(r.interest)}</td>
       <td>${fmtEUR.format(r.principal)}</td>
       <td><input class="cell-input sonder-input ${sonderOverride ? 'has-override' : ''}"
-            type="text" inputmode="decimal" data-kind="sonder" data-idx="${r.idx}"
+            type="text" inputmode="decimal" data-idx="${r.idx}"
             value="${sonderVal}" placeholder="0,00" /></td>
       <td>${fmtEUR.format(r.balance)}</td>
     </tr>`;
@@ -302,10 +361,9 @@ function renderTable(rows) {
 }
 
 /* ----------------------------------------------------------
-   7. Diagramme (Chart.js)
+   8. Diagramme (Chart.js)
 ---------------------------------------------------------- */
 function chartSeries(rows) {
-  // Bei langen Laufzeiten jährlich aggregieren, sonst monatlich.
   if (rows.length >= 24) {
     return aggregateYearly(rows).map((y) => ({
       label: String(y.year),
@@ -329,7 +387,6 @@ function renderCharts(rows) {
   const colText = css.getPropertyValue('--text-muted').trim() || '#666';
   const colGrid = css.getPropertyValue('--border').trim() || '#ddd';
 
-  // alte Instanzen entfernen
   Object.values(state.charts).forEach((c) => c && c.destroy());
   state.charts = {};
 
@@ -343,11 +400,8 @@ function renderCharts(rows) {
     y: { ticks: { color: colText, callback: euroTick }, grid: { color: colGrid }, beginAtZero: true },
   };
   const legend = { labels: { color: colText } };
-  const tip = {
-    callbacks: { label: (ctx) => `${ctx.dataset.label}: ${fmtEUR.format(ctx.parsed.y)}` },
-  };
+  const tip = { callbacks: { label: (ctx) => `${ctx.dataset.label}: ${fmtEUR.format(ctx.parsed.y)}` } };
 
-  // 1) Restschuldverlauf
   state.charts.balance = new Chart(document.getElementById('chartBalance'), {
     type: 'line',
     data: { labels, datasets: [{
@@ -359,7 +413,6 @@ function renderCharts(rows) {
       plugins: { legend, tooltip: tip }, scales: baseScales },
   });
 
-  // 2) Zusammensetzung (gestapelt)
   state.charts.composition = new Chart(document.getElementById('chartComposition'), {
     type: 'bar',
     data: { labels, datasets: [
@@ -372,7 +425,6 @@ function renderCharts(rows) {
       scales: { x: { ...baseScales.x, stacked: true }, y: { ...baseScales.y, stacked: true } } },
   });
 
-  // 3) Kumulierte Zinsen & Tilgung
   state.charts.cumulative = new Chart(document.getElementById('chartCumulative'), {
     type: 'line',
     data: { labels, datasets: [
@@ -387,7 +439,7 @@ function renderCharts(rows) {
 }
 
 /* ----------------------------------------------------------
-   8. Haupt-Recalc
+   9. Haupt-Recalc
 ---------------------------------------------------------- */
 function recalc() {
   const cfg = readInputs();
@@ -400,7 +452,7 @@ function recalc() {
 }
 
 /* ----------------------------------------------------------
-   9. Export (Excel / PDF / CSV)
+   10. Export (Excel / PDF / CSV)
 ---------------------------------------------------------- */
 function exportXLS() {
   if (typeof XLSX === 'undefined') { alert('Excel-Bibliothek konnte nicht geladen werden (Internetverbindung?).'); return; }
@@ -440,7 +492,6 @@ function exportPDF() {
 
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF();
-  doc.setFontSize ? null : null;
 
   doc.setFontSize(16);
   doc.text('Tilgungsplan – Annuitätendarlehen', 14, 18);
@@ -492,10 +543,9 @@ function exportCSV() {
 }
 
 /* ----------------------------------------------------------
-   10. Events
+   11. Events
 ---------------------------------------------------------- */
 function bindEvents() {
-  // Eingaben -> live neu rechnen
   ['principal', 'ratePct', 'monthlyPayment', 'startMonth'].forEach((id) => {
     document.getElementById(id).addEventListener('input', recalc);
   });
@@ -503,13 +553,14 @@ function bindEvents() {
   document.getElementById('btnRecalc').addEventListener('click', recalc);
 
   document.getElementById('btnReset').addEventListener('click', () => {
-    state.rateChanges.clear();
+    state.ratePhases = [];
     state.sonderMap.clear();
     document.getElementById('principal').value = '250.000';
-    document.getElementById('ratePct').value = '3,5';
+    document.getElementById('ratePct').value = '3,0';
     document.getElementById('monthlyPayment').value = '1.200';
     document.getElementById('startMonth').value = '2026-06';
     document.getElementById('yearlySonderAmount').value = '';
+    renderPhases();
     recalc();
   });
 
@@ -525,7 +576,36 @@ function bindEvents() {
     }
   });
 
-  // Ansicht umschalten
+  /* --- Zinsphasen --- */
+  document.getElementById('btnAddPhase').addEventListener('click', () => {
+    // Vorschlag: 5 Jahre nach Beginn
+    const startStr = document.getElementById('startMonth').value || '2026-06';
+    const [y, mo] = startStr.split('-').map(Number);
+    const d = new Date(y, (mo - 1) + 60, 1);
+    const from = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    state.ratePhases.push({ from, ratePct: '' });
+    renderPhases();
+  });
+
+  const phaseList = document.getElementById('phaseList');
+  phaseList.addEventListener('input', (e) => {
+    const t = e.target;
+    const i = parseInt(t.dataset.idx, 10);
+    if (isNaN(i) || !state.ratePhases[i]) return;
+    if (t.classList.contains('phase-from')) state.ratePhases[i].from = t.value;
+    else if (t.classList.contains('phase-rate')) state.ratePhases[i].ratePct = t.value;
+    recalc();
+  });
+  phaseList.addEventListener('click', (e) => {
+    const btn = e.target.closest('.phase-remove');
+    if (!btn) return;
+    const i = parseInt(btn.dataset.idx, 10);
+    state.ratePhases.splice(i, 1);
+    renderPhases();
+    recalc();
+  });
+
+  /* --- Ansicht umschalten --- */
   document.querySelectorAll('.btn-toggle').forEach((btn) => {
     btn.addEventListener('click', () => {
       state.view = btn.dataset.view;
@@ -535,30 +615,25 @@ function bindEvents() {
     });
   });
 
-  // Editieren in der Tabelle (Event-Delegation)
+  /* --- Sondertilgung in Tabelle editieren --- */
   document.getElementById('planBody').addEventListener('change', (e) => {
     const t = e.target;
-    if (!t.classList || !t.classList.contains('cell-input')) return;
+    if (!t.classList || !t.classList.contains('sonder-input')) return;
     const idx = parseInt(t.dataset.idx, 10);
     const val = parseNum(t.value);
-    if (t.dataset.kind === 'rate') {
-      if (t.value.trim() === '') state.rateChanges.delete(idx);
-      else state.rateChanges.set(idx, val);
-    } else if (t.dataset.kind === 'sonder') {
-      if (t.value.trim() === '' || val <= 0) state.sonderMap.delete(idx);
-      else state.sonderMap.set(idx, val);
-    }
+    if (t.value.trim() === '' || val <= 0) state.sonderMap.delete(idx);
+    else state.sonderMap.set(idx, val);
     recalc();
   });
 
-  // Jährliche Sondertilgung eintragen
+  /* --- Jährliche Sondertilgung --- */
   document.getElementById('btnApplyYearly').addEventListener('click', () => {
     const amount = parseNum(document.getElementById('yearlySonderAmount').value);
     if (!state.result || !state.result.rows.length) recalc();
     const total = state.result && state.result.rows.length ? state.result.rows.length : 360;
     const years = Math.ceil(total / 12);
     for (let y = 1; y <= years; y++) {
-      const idx = y * 12 - 1; // Jahresende (11, 23, 35, ...)
+      const idx = y * 12 - 1;
       if (idx < total) {
         if (amount > 0) state.sonderMap.set(idx, amount);
         else state.sonderMap.delete(idx);
@@ -572,14 +647,30 @@ function bindEvents() {
     recalc();
   });
 
-  // Export
+  /* --- Tabelle ein-/ausklappen + Scrollen --- */
+  document.getElementById('btnCollapsePlan').addEventListener('click', (e) => {
+    const card = document.getElementById('plan-card');
+    const collapsed = card.classList.toggle('collapsed');
+    e.target.textContent = collapsed ? 'Tabelle ausklappen' : 'Tabelle einklappen';
+    e.target.setAttribute('aria-expanded', String(!collapsed));
+  });
+  document.getElementById('btnScrollTop').addEventListener('click', () => {
+    document.getElementById('planScroll').scrollTo({ top: 0, behavior: 'smooth' });
+  });
+  document.getElementById('btnScrollBottom').addEventListener('click', () => {
+    const el = document.getElementById('planScroll');
+    el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+  });
+
+  /* --- Export --- */
   document.getElementById('btnXls').addEventListener('click', exportXLS);
   document.getElementById('btnPdf').addEventListener('click', exportPDF);
   document.getElementById('btnCsv').addEventListener('click', exportCSV);
 }
 
 /* ----------------------------------------------------------
-   11. Init
+   12. Init
 ---------------------------------------------------------- */
 bindEvents();
+renderPhases();
 recalc();

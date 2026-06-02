@@ -177,6 +177,34 @@ input[type="month"]:focus {
 .btn-ghost:hover { background: var(--bg); }
 .btn-export { background: var(--card-bg); color: var(--accent-dark); border-color: var(--accent); font-size: 0.9rem; padding: 9px 14px; }
 .btn-export:hover { background: var(--accent-soft); }
+.btn-small { padding: 6px 12px; font-size: 0.85rem; }
+
+/* ---------- Card head (Titel + Aktion) ---------- */
+.card-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.card-head h2 { margin-bottom: 0; }
+
+/* ---------- Zinsphasen ---------- */
+.rate-phases {
+  margin-top: 20px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+}
+.rate-phases h3 { margin: 0 0 6px; font-size: 1rem; display: flex; align-items: center; gap: 8px; }
+.badge {
+  font-size: 0.7rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em;
+  color: var(--accent-dark); background: var(--accent-soft);
+  padding: 2px 8px; border-radius: 999px;
+}
+.phase-list { display: flex; flex-direction: column; gap: 10px; margin: 12px 0; }
+.empty-phase { margin: 4px 0 12px; font-style: italic; }
+.phase-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.phase-row .phase-label { color: var(--text-muted); font-weight: 600; }
+.phase-row .phase-eq { color: var(--text-muted); }
+.phase-row input[type="month"] { width: auto; }
+.phase-rate-wrap { width: 130px; }
+.phase-rate-wrap input { width: 100%; }
 
 /* ---------- Warning ---------- */
 .warning {
@@ -232,9 +260,11 @@ input[type="month"]:focus {
 .quick-sonder label { font-size: 0.85rem; font-weight: 600; color: var(--text-muted); }
 .quick-sonder .input-affix { width: 120px; }
 .export-buttons { display: flex; gap: 8px; flex-wrap: wrap; }
+.scroll-buttons { display: flex; gap: 8px; flex-wrap: wrap; }
 
 /* ---------- Table ---------- */
-.table-scroll { overflow-x: auto; border: 1px solid var(--border); border-radius: var(--radius-sm); }
+.table-scroll { overflow: auto; max-height: 60vh; border: 1px solid var(--border); border-radius: var(--radius-sm); }
+#plan-card.collapsed .table-scroll { display: none; }
 #planTable { width: 100%; border-collapse: collapse; font-size: 0.9rem; min-width: 720px; }
 #planTable thead th {
   position: sticky;

@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta name="description" content="Kostenloser Annuitätendarlehen-Rechner mit dynamischem Tilgungsplan, Sondertilgungen, variablem Zinssatz, Grafiken und Export als Excel und PDF." />
+  <meta name="description" content="Kostenloser Annuitätendarlehen-Rechner mit dynamischem Tilgungsplan, Sondertilgungen, Zinsphasen, Grafiken und Export als Excel und PDF." />
   <title>Annuitätendarlehen-Rechner</title>
   <link rel="stylesheet" href="styles.css" />
 </head>
@@ -11,7 +11,7 @@
   <header class="site-header">
     <div class="container">
       <h1>Annuitätendarlehen&#8209;Rechner</h1>
-      <p class="subtitle">Tilgungsplan berechnen &middot; Sondertilgungen &amp; variable Zinssätze &middot; Grafiken &middot; Export als Excel / PDF</p>
+      <p class="subtitle">Tilgungsplan berechnen &middot; Sondertilgungen &amp; Zinsphasen &middot; Grafiken &middot; Export als Excel / PDF</p>
     </div>
   </header>
 
@@ -30,9 +30,9 @@
         </div>
 
         <div class="field">
-          <label for="ratePct">Sollzinssatz (p.&nbsp;a.)</label>
+          <label for="ratePct">Sollzinssatz (anfänglich, p.&nbsp;a.)</label>
           <div class="input-affix">
-            <input type="text" id="ratePct" inputmode="decimal" value="3,5" autocomplete="off" />
+            <input type="text" id="ratePct" inputmode="decimal" value="3,0" autocomplete="off" />
             <span class="affix">%</span>
           </div>
         </div>
@@ -49,6 +49,14 @@
           <label for="startMonth">Erste Rate (Monat)</label>
           <input type="month" id="startMonth" value="2026-06" />
         </div>
+      </div>
+
+      <!-- Zinsphasen -->
+      <div class="rate-phases">
+        <h3>Zinsphasen <span class="badge">Zinsbindung</span></h3>
+        <p class="hint">Der <strong>Sollzinssatz</strong> oben gilt ab Beginn. Ergänze hier nur die <strong>Änderungen</strong>: Jeder Eintrag gilt <strong>ab dem angegebenen Monat</strong> bis zur nächsten Änderung. Beispiel: ab 06/2031 → 3,5&nbsp;%, ab 06/2036 → 3,8&nbsp;%.</p>
+        <div id="phaseList" class="phase-list"><!-- per JS --></div>
+        <button type="button" id="btnAddPhase" class="btn btn-secondary">+ Zinsphase hinzufügen</button>
       </div>
 
       <details class="helper">
@@ -79,31 +87,15 @@
     <!-- ====================== ZUSAMMENFASSUNG ====================== -->
     <section class="card" id="summary-card" aria-labelledby="h-summary">
       <h2 id="h-summary">2. Zusammenfassung</h2>
-      <div id="summary" class="summary-grid"><!-- gefüllt per JS --></div>
-    </section>
-
-    <!-- ====================== GRAFIKEN ====================== -->
-    <section class="card" id="charts-card" aria-labelledby="h-charts">
-      <h2 id="h-charts">3. Grafische Auswertung</h2>
-      <div class="charts-grid">
-        <figure class="chart-box">
-          <figcaption>Restschuldverlauf</figcaption>
-          <div class="canvas-wrap"><canvas id="chartBalance"></canvas></div>
-        </figure>
-        <figure class="chart-box">
-          <figcaption>Zusammensetzung der Zahlungen (Zins / Tilgung / Sondertilgung)</figcaption>
-          <div class="canvas-wrap"><canvas id="chartComposition"></canvas></div>
-        </figure>
-        <figure class="chart-box">
-          <figcaption>Kumulierte Zinsen &amp; Tilgung</figcaption>
-          <div class="canvas-wrap"><canvas id="chartCumulative"></canvas></div>
-        </figure>
-      </div>
+      <div id="summary" class="summary-grid"><!-- per JS --></div>
     </section>
 
     <!-- ====================== TILGUNGSPLAN ====================== -->
     <section class="card" id="plan-card" aria-labelledby="h-plan">
-      <h2 id="h-plan">4. Tilgungsplan</h2>
+      <div class="card-head">
+        <h2 id="h-plan">3. Tilgungsplan</h2>
+        <button type="button" id="btnCollapsePlan" class="btn btn-ghost btn-small" aria-expanded="true">Tabelle einklappen</button>
+      </div>
 
       <div class="plan-toolbar">
         <div class="view-toggle" role="group" aria-label="Ansicht">
@@ -121,20 +113,49 @@
           <button type="button" id="btnClearSonder" class="btn btn-ghost">Sondertilgungen löschen</button>
         </div>
 
-        <div class="export-buttons">
-          <button type="button" id="btnXls" class="btn btn-export">Excel (.xlsx)</button>
-          <button type="button" id="btnPdf" class="btn btn-export">PDF</button>
-          <button type="button" id="btnCsv" class="btn btn-export">CSV</button>
+        <div class="scroll-buttons">
+          <button type="button" id="btnScrollTop" class="btn btn-ghost btn-small" title="Zum Anfang">▲ Anfang</button>
+          <button type="button" id="btnScrollBottom" class="btn btn-ghost btn-small" title="Zum Ende">▼ Ende</button>
         </div>
       </div>
 
-      <p class="hint" id="editHint">Tipp: In der <strong>monatlichen</strong> Ansicht kannst du je Periode den <strong>Zinssatz ändern</strong> (gilt ab diesem Monat) und eine <strong>Sondertilgung</strong> eintragen. Der Plan rechnet sich sofort neu.</p>
+      <p class="hint" id="editHint">Tipp: In der <strong>monatlichen</strong> Ansicht kannst du je Periode eine <strong>Sondertilgung</strong> eintragen. <strong>Zinsänderungen</strong> stellst du oben unter „Zinsphasen" ein. Der Plan rechnet sich sofort neu.</p>
 
-      <div class="table-scroll">
+      <div class="table-scroll" id="planScroll">
         <table id="planTable">
           <thead id="planHead"></thead>
           <tbody id="planBody"></tbody>
         </table>
+      </div>
+    </section>
+
+    <!-- ====================== GRAFIKEN ====================== -->
+    <section class="card" id="charts-card" aria-labelledby="h-charts">
+      <h2 id="h-charts">4. Grafische Auswertung</h2>
+      <div class="charts-grid">
+        <figure class="chart-box">
+          <figcaption>Restschuldverlauf</figcaption>
+          <div class="canvas-wrap"><canvas id="chartBalance"></canvas></div>
+        </figure>
+        <figure class="chart-box">
+          <figcaption>Zusammensetzung der Zahlungen (Zins / Tilgung / Sondertilgung)</figcaption>
+          <div class="canvas-wrap"><canvas id="chartComposition"></canvas></div>
+        </figure>
+        <figure class="chart-box">
+          <figcaption>Kumulierte Zinsen &amp; Tilgung</figcaption>
+          <div class="canvas-wrap"><canvas id="chartCumulative"></canvas></div>
+        </figure>
+      </div>
+    </section>
+
+    <!-- ====================== EXPORT ====================== -->
+    <section class="card" id="export-card" aria-labelledby="h-export">
+      <h2 id="h-export">5. Export</h2>
+      <p class="hint">Tilgungsplan und Zusammenfassung herunterladen:</p>
+      <div class="export-buttons">
+        <button type="button" id="btnXls" class="btn btn-export">Excel (.xlsx)</button>
+        <button type="button" id="btnPdf" class="btn btn-export">PDF</button>
+        <button type="button" id="btnCsv" class="btn btn-export">CSV</button>
       </div>
     </section>
 
