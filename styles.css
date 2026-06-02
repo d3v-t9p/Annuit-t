@@ -299,9 +299,32 @@ input[type="month"]:focus {
 .cell-input.rate-input { width: 72px; }
 .cell-input.has-override { border-color: var(--sonder); background: color-mix(in srgb, var(--sonder) 8%, var(--card-bg)); }
 
-/* ---------- Footer ---------- */
-.site-footer { padding: 18px 0 40px; }
-.site-footer p { font-size: 0.8rem; color: var(--text-muted); margin: 0; }
+/* ---------- Interest-only / optional markers ---------- */
+.opt { font-weight: 400; color: var(--text-muted); font-size: 0.8em; }
+.badge-io {
+  display: inline-block; font-size: 0.72rem; font-weight: 600;
+  color: var(--sonder); background: color-mix(in srgb, var(--sonder) 12%, transparent);
+  padding: 1px 7px; border-radius: 999px;
+}
+#planTable tbody tr.io-row { background: color-mix(in srgb, var(--sonder) 5%, var(--card-bg)); }
+
+/* ---------- Footer / Recht ---------- */
+.site-footer { padding: 18px 0 48px; }
+.site-footer p { font-size: 0.8rem; color: var(--text-muted); margin: 0 0 8px; }
+.site-footer .disclaimer-short { font-size: 0.85rem; }
+.legal {
+  margin-top: 12px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--card-bg); padding: 4px 14px;
+}
+.legal summary { cursor: pointer; font-weight: 600; color: var(--accent); padding: 8px 0; }
+.legal-body { padding: 4px 0 14px; }
+.legal-body h3 { font-size: 0.95rem; margin: 14px 0 4px; color: var(--text); }
+.legal-body p { font-size: 0.82rem; line-height: 1.55; }
+.legal-body .placeholder {
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  background: var(--bg); border: 1px dashed var(--border); border-radius: 6px;
+  padding: 10px 12px; color: var(--text);
+}
 
 /* ---------- Responsive ---------- */
 @media (max-width: 640px) {

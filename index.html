@@ -49,14 +49,30 @@
           <label for="startMonth">Erste Rate (Monat)</label>
           <input type="month" id="startMonth" value="2026-06" />
         </div>
+
+        <div class="field">
+          <label for="interestOnlyMonths">Tilgungsfreie Anlaufphase <span class="opt">(optional)</span></label>
+          <div class="input-affix">
+            <input type="text" id="interestOnlyMonths" inputmode="numeric" value="0" autocomplete="off" />
+            <span class="affix">Monate</span>
+          </div>
+        </div>
       </div>
 
       <!-- Zinsphasen -->
       <div class="rate-phases">
-        <h3>Zinsphasen <span class="badge">Zinsbindung</span></h3>
+        <h3>Zinsphasen <span class="badge">Zinssatz</span></h3>
         <p class="hint">Der <strong>Sollzinssatz</strong> oben gilt ab Beginn. Ergänze hier nur die <strong>Änderungen</strong>: Jeder Eintrag gilt <strong>ab dem angegebenen Monat</strong> bis zur nächsten Änderung. Beispiel: ab 06/2031 → 3,5&nbsp;%, ab 06/2036 → 3,8&nbsp;%.</p>
-        <div id="phaseList" class="phase-list"><!-- per JS --></div>
-        <button type="button" id="btnAddPhase" class="btn btn-secondary">+ Zinsphase hinzufügen</button>
+        <div id="ratePhaseList" class="phase-list"><!-- per JS --></div>
+        <button type="button" id="btnAddRatePhase" class="btn btn-secondary">+ Zinsphase hinzufügen</button>
+      </div>
+
+      <!-- Ratenphasen -->
+      <div class="rate-phases">
+        <h3>Ratenphasen <span class="badge">Monatliche Rate</span></h3>
+        <p class="hint">Die <strong>monatliche Rate</strong> oben gilt ab Beginn. Ergänze hier nur die <strong>Änderungen</strong>: Jeder Eintrag gilt <strong>ab dem angegebenen Monat</strong> bis zur nächsten Änderung. Beispiel: ab 06/2031 → 1.500&nbsp;€.</p>
+        <div id="paymentPhaseList" class="phase-list"><!-- per JS --></div>
+        <button type="button" id="btnAddPaymentPhase" class="btn btn-secondary">+ Ratenphase hinzufügen</button>
       </div>
 
       <details class="helper">
@@ -160,7 +176,28 @@
     </section>
 
     <footer class="site-footer">
-      <p>Alle Berechnungen erfolgen lokal in deinem Browser – es werden keine Daten übertragen. Die Ergebnisse dienen nur zur Orientierung und stellen keine Finanzberatung dar. Rundungsdifferenzen sind möglich.</p>
+      <p class="disclaimer-short"><strong>Alle Angaben ohne Gewähr.</strong> Die Berechnungen sind unverbindlich und stellen keine Finanz-, Anlage- oder Rechtsberatung dar.</p>
+
+      <details class="legal">
+        <summary>Haftungsausschluss, Impressum &amp; Datenschutz</summary>
+        <div class="legal-body">
+          <h3>Haftungsausschluss</h3>
+          <p>Alle Berechnungen und Angaben auf dieser Seite erfolgen <strong>ohne Gewähr</strong>. Die Ergebnisse sind unverbindlich, können Rundungsdifferenzen enthalten und stellen <strong>keine Finanz-, Anlage- oder Rechtsberatung</strong> dar. Für die Richtigkeit, Vollständigkeit und Aktualität der Berechnungen wird keine Haftung übernommen. Maßgeblich sind allein die Angaben deiner Bank bzw. die Konditionen des jeweiligen Kreditvertrags.</p>
+
+          <h3>Datenschutz</h3>
+          <p>Diese Anwendung verarbeitet alle Eingaben <strong>ausschließlich lokal in deinem Browser</strong>. Es werden keine personenbezogenen Daten erhoben, gespeichert oder an einen Server übertragen. Beim Aufruf der Seite (z.&nbsp;B. über GitHub Pages) können technisch bedingt Server-Logfiles (etwa die IP-Adresse) beim Hosting-Anbieter anfallen; hierfür gilt dessen Datenschutzerklärung.</p>
+
+          <h3>Impressum</h3>
+          <p>Angaben gemäß § 5 DDG (Digitale-Dienste-Gesetz):</p>
+          <p class="placeholder">
+            [Vorname Nachname]<br />
+            [Straße und Hausnummer]<br />
+            [PLZ und Ort]<br />
+            E-Mail: [deine@e-mail.de]
+          </p>
+          <p class="hint">⚠️ Vorlage – bitte vor der Veröffentlichung mit deinen echten Daten ausfüllen. Dies ist kein rechtlich geprüfter Text und ersetzt keine Rechtsberatung.</p>
+        </div>
+      </details>
     </footer>
   </main>
 

@@ -21,13 +21,9 @@ const fmtPct = new Intl.NumberFormat('de-DE', {
 const round2 = (x) => Math.round((x + Number.EPSILON) * 100) / 100;
 
 /**
- * Wandelt Nutzereingaben robust in eine Zahl um – deutsches Format bevorzugt.
- * "1.200"     -> 1200     (Punkt = Tausender)
- * "250.000"   -> 250000
- * "1.200,50"  -> 1200.5   (Komma = Dezimal)
- * "3,5"       -> 3.5
- * "3.5"       -> 3.5      (einzelner Punkt + 1–2 Nachkommastellen = Dezimal)
- * "1,200.50"  -> 1200.5   (englisches Format wird ebenfalls erkannt)
+ * Robuste deutsche Zahlenerkennung.
+ * "1.200" -> 1200, "1.200,50" -> 1200.5, "3,5" -> 3.5, "3.5" -> 3.5,
+ * "1.200.000" -> 1200000, "1,200.50" -> 1200.5
  */
 function parseNum(input) {
   if (typeof input === 'number') return input;
@@ -38,16 +34,13 @@ function parseNum(input) {
 
   const lastComma = s.lastIndexOf(',');
   const lastDot = s.lastIndexOf('.');
-  let decimalSep = null; // ',' | '.' | null (kein Dezimaltrenner -> alles Tausender)
+  let decimalSep = null;
 
   if (lastComma > -1 && lastDot > -1) {
-    // Der zuletzt stehende Trenner ist der Dezimaltrenner.
     decimalSep = lastComma > lastDot ? ',' : '.';
   } else if (lastComma > -1) {
-    // Nur Kommas: mehrere -> Tausender; eines -> Dezimal (deutsch).
     decimalSep = s.indexOf(',') === lastComma ? ',' : null;
   } else if (lastDot > -1) {
-    // Nur Punkte: mehrere -> Tausender; eines mit genau 3 Nachstellen -> Tausender, sonst Dezimal.
     if (s.indexOf('.') !== lastDot) {
       decimalSep = null;
     } else {
@@ -77,29 +70,30 @@ function monthLabel(d) {
    2. Zustand (State)
 ---------------------------------------------------------- */
 const state = {
-  ratePhases: [],          // [{ from: 'YYYY-MM', ratePct: '3,5' }, ...] zusätzliche Zinsänderungen
+  ratePhases: [],          // [{ from:'YYYY-MM', value:'3,5' }] – Zinsänderungen
+  paymentPhases: [],       // [{ from:'YYYY-MM', value:'1.500' }] – Ratenänderungen
   sonderMap: new Map(),    // monatsindex (0-basiert) -> Sondertilgung (€)
   view: 'month',           // 'month' | 'year'
-  result: null,            // letztes Berechnungsergebnis
-  charts: {},              // Chart.js-Instanzen
+  result: null,
+  charts: {},
 };
 
-const MAX_MONTHS = 1200;   // Sicherheitsgrenze (100 Jahre)
+const MAX_MONTHS = 1200;
 const EPS = 0.005;
 
 /* ----------------------------------------------------------
-   3. Eingaben lesen + Zinsänderungen bauen
+   3. Eingaben lesen + Phasen in Monats-Maps umwandeln
 ---------------------------------------------------------- */
-/** Erzeugt aus den Zinsphasen eine Map: Monatsindex -> Zinssatz (% p.a.). */
-function buildRateChanges(startYear, startMonth) {
+/** Wandelt eine Phasenliste in eine Map Monatsindex -> Wert um. */
+function buildPhaseMap(phases, startYear, startMonth) {
   const map = new Map();
-  for (const p of state.ratePhases) {
-    if (!p.from || p.ratePct === '' || p.ratePct === null || p.ratePct === undefined) continue;
+  for (const p of phases) {
+    if (!p.from || p.value === '' || p.value === null || p.value === undefined) continue;
     const [y, mo] = p.from.split('-').map(Number);
     if (!y || !mo) continue;
     let idx = (y - startYear) * 12 + ((mo - 1) - startMonth);
     if (idx < 0) idx = 0;
-    map.set(idx, parseNum(p.ratePct));
+    map.set(idx, parseNum(p.value));
   }
   return map;
 }
@@ -108,13 +102,15 @@ function readInputs() {
   const principal = parseNum(document.getElementById('principal').value);
   const baseRatePct = parseNum(document.getElementById('ratePct').value);
   const monthlyPayment = parseNum(document.getElementById('monthlyPayment').value);
+  let interestOnlyMonths = Math.max(0, Math.round(parseNum(document.getElementById('interestOnlyMonths').value)));
   const startStr = document.getElementById('startMonth').value || '2026-06';
   const [y, mo] = startStr.split('-').map(Number);
   const startYear = y;
   const startMonth = (mo || 1) - 1;
   return {
-    principal, baseRatePct, monthlyPayment, startYear, startMonth,
-    rateChanges: buildRateChanges(startYear, startMonth),
+    principal, baseRatePct, monthlyPayment, interestOnlyMonths, startYear, startMonth,
+    rateChanges: buildPhaseMap(state.ratePhases, startYear, startMonth),
+    paymentChanges: buildPhaseMap(state.paymentPhases, startYear, startMonth),
     sonderMap: state.sonderMap,
   };
 }
@@ -123,50 +119,53 @@ function readInputs() {
    4. Rechenkern
 ---------------------------------------------------------- */
 function computeSchedule(cfg) {
-  const { principal, baseRatePct, monthlyPayment, startYear, startMonth,
-          rateChanges, sonderMap } = cfg;
+  const { principal, baseRatePct, monthlyPayment, interestOnlyMonths,
+          startYear, startMonth, rateChanges, paymentChanges, sonderMap } = cfg;
   const warnings = [];
 
   if (principal <= 0)       warnings.push('Bitte eine Kreditsumme größer 0 eingeben.');
   if (monthlyPayment <= 0)  warnings.push('Bitte eine monatliche Rate größer 0 eingeben.');
-
-  const firstRatePct = rateChanges.has(0) ? rateChanges.get(0) : baseRatePct;
-  const firstInterest = principal * (firstRatePct / 100 / 12);
-  if (principal > 0 && monthlyPayment > 0 && monthlyPayment <= firstInterest) {
-    warnings.push(
-      `Die monatliche Rate (${fmtEUR.format(monthlyPayment)}) deckt nicht einmal die ` +
-      `ersten Zinsen (${fmtEUR.format(firstInterest)}). Der Kredit würde so nie getilgt – ` +
-      `bitte die Rate erhöhen.`);
-    return { rows: [], summary: null, warnings };
-  }
   if (warnings.length > 0) return { rows: [], summary: null, warnings };
 
   const rows = [];
   let balance = principal;
   let currentRatePct = baseRatePct;
+  let currentPayment = monthlyPayment;
   let cumInterest = 0, cumPrincipal = 0;
   let sumPayment = 0, sumSonder = 0, sumInterest = 0;
 
   for (let m = 0; m < MAX_MONTHS; m++) {
     if (rateChanges.has(m)) currentRatePct = rateChanges.get(m);
+    if (paymentChanges.has(m)) currentPayment = paymentChanges.get(m);
 
     const monthlyRate = currentRatePct / 100 / 12;
     const interest = round2(balance * monthlyRate);
 
-    let principalPortion = round2(monthlyPayment - interest);
-    let payment = monthlyPayment;
+    let principalPortion;
+    let payment;
+    const isInterestOnly = m < interestOnlyMonths;
 
-    if (principalPortion <= 0) {
-      warnings.push(
-        `Ab ${monthLabel(new Date(startYear, startMonth + m, 1))} übersteigen die Zinsen ` +
-        `die Rate – ab hier kann nicht mehr getilgt werden. Berechnung an dieser Stelle gestoppt.`);
-      break;
+    if (isInterestOnly) {
+      // Tilgungsfreie Anlaufphase: nur Zinsen, keine planmäßige Tilgung
+      principalPortion = 0;
+      payment = interest;
+    } else {
+      principalPortion = round2(currentPayment - interest);
+      payment = currentPayment;
+      if (principalPortion <= 0) {
+        const where = m === 0 ? '' : `ab ${monthLabel(new Date(startYear, startMonth + m, 1))} `;
+        warnings.push(
+          `Die Rate (${fmtEUR.format(currentPayment)}) deckt ${where}die Zinsen ` +
+          `(${fmtEUR.format(interest)}) nicht – ab hier kann nicht getilgt werden. ` +
+          `Berechnung an dieser Stelle gestoppt. Bitte die Rate erhöhen.`);
+        break;
+      }
+      if (principalPortion > balance) {
+        principalPortion = round2(balance);
+        payment = round2(interest + principalPortion);
+      }
     }
 
-    if (principalPortion > balance) {
-      principalPortion = round2(balance);
-      payment = round2(interest + principalPortion);
-    }
     let newBalance = round2(balance - principalPortion);
 
     let sonder = sonderMap.get(m) || 0;
@@ -189,6 +188,7 @@ function computeSchedule(cfg) {
       principal: principalPortion,
       sonder,
       balance: newBalance,
+      interestOnly: isInterestOnly,
       cumInterest, cumPrincipal,
     });
 
@@ -196,7 +196,7 @@ function computeSchedule(cfg) {
     if (balance <= EPS) break;
   }
 
-  if (balance > EPS) {
+  if (rows.length && balance > EPS) {
     warnings.push('Der Kredit ist innerhalb des berechneten Zeitraums noch nicht vollständig getilgt.');
   }
 
@@ -205,11 +205,12 @@ function computeSchedule(cfg) {
     months,
     years: Math.floor(months / 12),
     remMonths: months % 12,
+    interestOnlyMonths: Math.min(interestOnlyMonths, months),
     lastDate: months ? rows[months - 1].date : null,
     totalInterest: sumInterest,
     totalSonder: sumSonder,
     totalPaid: round2(sumPayment + sumSonder),
-    endBalance: rows.length ? rows[rows.length - 1].balance : principal,
+    endBalance: months ? rows[months - 1].balance : principal,
     principal,
     fullyRepaid: balance <= EPS,
   };
@@ -218,7 +219,7 @@ function computeSchedule(cfg) {
 }
 
 /* ----------------------------------------------------------
-   5. Jährliche Aggregation (für Tabelle & Diagramme)
+   5. Jährliche Aggregation
 ---------------------------------------------------------- */
 function aggregateYearly(rows) {
   const map = new Map();
@@ -245,26 +246,44 @@ function aggregateYearly(rows) {
 }
 
 /* ----------------------------------------------------------
-   6. Rendering – Zinsphasen-Editor
+   6. Phasen-Editor (Zins & Rate, generisch)
 ---------------------------------------------------------- */
-function renderPhases() {
-  const list = document.getElementById('phaseList');
-  if (!state.ratePhases.length) {
-    list.innerHTML = '<p class="hint empty-phase">Noch keine Zinsänderung – es gilt durchgehend der Sollzinssatz oben.</p>';
+const PHASE_CONF = {
+  rate:    { arr: 'ratePhases',    listId: 'ratePhaseList',    unit: '%', placeholder: 'z. B. 3,5',
+             empty: 'Noch keine Zinsänderung – es gilt durchgehend der Sollzinssatz oben.' },
+  payment: { arr: 'paymentPhases', listId: 'paymentPhaseList', unit: '€', placeholder: 'z. B. 1.500',
+             empty: 'Noch keine Ratenänderung – es gilt durchgehend die monatliche Rate oben.' },
+};
+
+function renderPhaseList(kind) {
+  const c = PHASE_CONF[kind];
+  const arr = state[c.arr];
+  const list = document.getElementById(c.listId);
+  if (!arr.length) {
+    list.innerHTML = `<p class="hint empty-phase">${c.empty}</p>`;
     return;
   }
-  list.innerHTML = state.ratePhases.map((p, i) => `
-    <div class="phase-row" data-idx="${i}">
+  list.innerHTML = arr.map((p, i) => `
+    <div class="phase-row" data-kind="${kind}" data-idx="${i}">
       <span class="phase-label">ab</span>
-      <input type="month" class="phase-from" data-idx="${i}" value="${p.from || ''}" />
+      <input type="month" class="phase-from" data-kind="${kind}" data-idx="${i}" value="${p.from || ''}" />
       <span class="phase-eq">→</span>
       <div class="input-affix phase-rate-wrap">
-        <input type="text" class="phase-rate" inputmode="decimal" data-idx="${i}"
-               value="${p.ratePct || ''}" placeholder="z. B. 3,5" />
-        <span class="affix">%</span>
+        <input type="text" class="phase-val" inputmode="decimal" data-kind="${kind}" data-idx="${i}"
+               value="${p.value || ''}" placeholder="${c.placeholder}" />
+        <span class="affix">${c.unit}</span>
       </div>
-      <button type="button" class="btn btn-ghost btn-small phase-remove" data-idx="${i}" title="Entfernen">✕</button>
+      <button type="button" class="btn btn-ghost btn-small phase-remove" data-kind="${kind}" data-idx="${i}" title="Entfernen">✕</button>
     </div>`).join('');
+}
+
+function addPhase(kind) {
+  const startStr = document.getElementById('startMonth').value || '2026-06';
+  const [y, mo] = startStr.split('-').map(Number);
+  const d = new Date(y, (mo - 1) + 60, 1); // Vorschlag: 5 Jahre nach Beginn
+  const from = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  state[PHASE_CONF[kind].arr].push({ from, value: '' });
+  renderPhaseList(kind);
 }
 
 /* ----------------------------------------------------------
@@ -299,6 +318,9 @@ function renderSummary(summary) {
     { label: 'Gesamtzahlungen', value: fmtEUR.format(summary.totalPaid), cls: 'accent' },
     { label: 'Restschuld am Ende', value: fmtEUR.format(summary.endBalance) },
   ];
+  if (summary.interestOnlyMonths > 0) {
+    items.splice(1, 0, { label: 'Tilgungsfrei', value: `${summary.interestOnlyMonths} Mon.` });
+  }
   el.innerHTML = items.map((i) =>
     `<div class="summary-item ${i.cls || ''}">
        <div class="label">${i.label}</div>
@@ -334,7 +356,6 @@ function renderTable(rows) {
     return;
   }
 
-  // Monatliche Ansicht – Zinssatz nur Anzeige, Sondertilgung editierbar
   head.innerHTML = `<tr>
     <th>Nr.</th><th>Monat</th><th>Zinssatz</th><th>Rate</th>
     <th>Zinsen</th><th>Tilgung</th><th>Sondertilgung</th><th>Restschuld</th>
@@ -344,13 +365,16 @@ function renderTable(rows) {
     const sonderOverride = state.sonderMap.has(r.idx) && state.sonderMap.get(r.idx) > 0;
     const isYearEnd = (r.idx % 12) === 11;
     const sonderVal = sonderOverride ? fmtNum.format(state.sonderMap.get(r.idx)) : '';
-    return `<tr class="${isYearEnd ? 'year-end' : ''}">
+    const tilgungCell = r.interestOnly
+      ? '<span class="badge-io">tilgungsfrei</span>'
+      : fmtEUR.format(r.principal);
+    return `<tr class="${isYearEnd ? 'year-end' : ''} ${r.interestOnly ? 'io-row' : ''}">
       <td>${r.idx + 1}</td>
       <td>${monthLabel(r.date)}</td>
       <td>${fmtPct.format(r.ratePct)} %</td>
       <td>${fmtEUR.format(r.payment)}</td>
       <td>${fmtEUR.format(r.interest)}</td>
-      <td>${fmtEUR.format(r.principal)}</td>
+      <td>${tilgungCell}</td>
       <td><input class="cell-input sonder-input ${sonderOverride ? 'has-override' : ''}"
             type="text" inputmode="decimal" data-idx="${r.idx}"
             value="${sonderVal}" placeholder="0,00" /></td>
@@ -472,6 +496,7 @@ function exportXLS() {
   const summaryData = [
     { Kennzahl: 'Kreditsumme', Wert: summary.principal },
     { Kennzahl: 'Anzahl Raten', Wert: summary.months },
+    { Kennzahl: 'Tilgungsfreie Monate', Wert: summary.interestOnlyMonths },
     { Kennzahl: 'Laufzeit (Jahre)', Wert: summary.years + summary.remMonths / 12 },
     { Kennzahl: 'Summe Zinsen', Wert: summary.totalInterest },
     { Kennzahl: 'Summe Sondertilgungen', Wert: summary.totalSonder },
@@ -508,7 +533,8 @@ function exportPDF() {
   const body = rows.map((r) => [
     r.idx + 1, monthLabel(r.date), fmtPct.format(r.ratePct) + ' %',
     fmtEUR.format(r.payment), fmtEUR.format(r.interest),
-    fmtEUR.format(r.principal), fmtEUR.format(r.sonder), fmtEUR.format(r.balance),
+    r.interestOnly ? 'tilgungsfrei' : fmtEUR.format(r.principal),
+    fmtEUR.format(r.sonder), fmtEUR.format(r.balance),
   ]);
   doc.autoTable({
     head: [['Nr.', 'Monat', 'Zins %', 'Rate', 'Zinsen', 'Tilgung', 'Sonder', 'Restschuld']],
@@ -546,7 +572,7 @@ function exportCSV() {
    11. Events
 ---------------------------------------------------------- */
 function bindEvents() {
-  ['principal', 'ratePct', 'monthlyPayment', 'startMonth'].forEach((id) => {
+  ['principal', 'ratePct', 'monthlyPayment', 'startMonth', 'interestOnlyMonths'].forEach((id) => {
     document.getElementById(id).addEventListener('input', recalc);
   });
 
@@ -554,13 +580,16 @@ function bindEvents() {
 
   document.getElementById('btnReset').addEventListener('click', () => {
     state.ratePhases = [];
+    state.paymentPhases = [];
     state.sonderMap.clear();
     document.getElementById('principal').value = '250.000';
     document.getElementById('ratePct').value = '3,0';
     document.getElementById('monthlyPayment').value = '1.200';
     document.getElementById('startMonth').value = '2026-06';
+    document.getElementById('interestOnlyMonths').value = '0';
     document.getElementById('yearlySonderAmount').value = '';
-    renderPhases();
+    renderPhaseList('rate');
+    renderPhaseList('payment');
     recalc();
   });
 
@@ -576,33 +605,30 @@ function bindEvents() {
     }
   });
 
-  /* --- Zinsphasen --- */
-  document.getElementById('btnAddPhase').addEventListener('click', () => {
-    // Vorschlag: 5 Jahre nach Beginn
-    const startStr = document.getElementById('startMonth').value || '2026-06';
-    const [y, mo] = startStr.split('-').map(Number);
-    const d = new Date(y, (mo - 1) + 60, 1);
-    const from = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-    state.ratePhases.push({ from, ratePct: '' });
-    renderPhases();
-  });
+  /* --- Phasen (Zins & Rate) --- */
+  document.getElementById('btnAddRatePhase').addEventListener('click', () => addPhase('rate'));
+  document.getElementById('btnAddPaymentPhase').addEventListener('click', () => addPhase('payment'));
 
-  const phaseList = document.getElementById('phaseList');
-  phaseList.addEventListener('input', (e) => {
-    const t = e.target;
-    const i = parseInt(t.dataset.idx, 10);
-    if (isNaN(i) || !state.ratePhases[i]) return;
-    if (t.classList.contains('phase-from')) state.ratePhases[i].from = t.value;
-    else if (t.classList.contains('phase-rate')) state.ratePhases[i].ratePct = t.value;
-    recalc();
-  });
-  phaseList.addEventListener('click', (e) => {
-    const btn = e.target.closest('.phase-remove');
-    if (!btn) return;
-    const i = parseInt(btn.dataset.idx, 10);
-    state.ratePhases.splice(i, 1);
-    renderPhases();
-    recalc();
+  ['ratePhaseList', 'paymentPhaseList'].forEach((id) => {
+    const el = document.getElementById(id);
+    el.addEventListener('input', (e) => {
+      const t = e.target;
+      const kind = t.dataset.kind;
+      const i = parseInt(t.dataset.idx, 10);
+      if (!kind || isNaN(i) || !state[PHASE_CONF[kind].arr][i]) return;
+      if (t.classList.contains('phase-from')) state[PHASE_CONF[kind].arr][i].from = t.value;
+      else if (t.classList.contains('phase-val')) state[PHASE_CONF[kind].arr][i].value = t.value;
+      recalc();
+    });
+    el.addEventListener('click', (e) => {
+      const btn = e.target.closest('.phase-remove');
+      if (!btn) return;
+      const kind = btn.dataset.kind;
+      const i = parseInt(btn.dataset.idx, 10);
+      state[PHASE_CONF[kind].arr].splice(i, 1);
+      renderPhaseList(kind);
+      recalc();
+    });
   });
 
   /* --- Ansicht umschalten --- */
@@ -672,5 +698,6 @@ function bindEvents() {
    12. Init
 ---------------------------------------------------------- */
 bindEvents();
-renderPhases();
+renderPhaseList('rate');
+renderPhaseList('payment');
 recalc();
