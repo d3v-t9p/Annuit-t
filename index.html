@@ -147,8 +147,29 @@
 
     <!-- ====================== GRAFIKEN ====================== -->
     <section class="card" id="charts-card" aria-labelledby="h-charts">
-      <h2 id="h-charts">4. Grafische Auswertung</h2>
-      <div class="charts-grid">
+      <div class="card-head">
+        <h2 id="h-charts">4. Grafische Auswertung</h2>
+        <div class="chart-controls">
+          <div class="ctrl-group" role="group" aria-label="Datenraster">
+            <span class="ctrl-label">Raster</span>
+            <button type="button" class="btn btn-chip is-active" data-gran="auto">Auto</button>
+            <button type="button" class="btn btn-chip" data-gran="month">Monat</button>
+            <button type="button" class="btn btn-chip" data-gran="year">Jahr</button>
+          </div>
+          <div class="ctrl-group" role="group" aria-label="Größe">
+            <span class="ctrl-label">Größe</span>
+            <button type="button" class="btn btn-chip" data-size="s">S</button>
+            <button type="button" class="btn btn-chip is-active" data-size="m">M</button>
+            <button type="button" class="btn btn-chip" data-size="l">L</button>
+          </div>
+          <div class="ctrl-group" role="group" aria-label="Layout">
+            <span class="ctrl-label">Layout</span>
+            <button type="button" class="btn btn-chip is-active" data-layout="grid">Raster</button>
+            <button type="button" class="btn btn-chip" data-layout="single">Groß</button>
+          </div>
+        </div>
+      </div>
+      <div class="charts-grid" id="chartsGrid">
         <figure class="chart-box">
           <figcaption>Restschuldverlauf</figcaption>
           <div class="canvas-wrap"><canvas id="chartBalance"></canvas></div>

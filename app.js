@@ -73,7 +73,8 @@ const state = {
   ratePhases: [],          // [{ from:'YYYY-MM', value:'3,5' }] – Zinsänderungen
   paymentPhases: [],       // [{ from:'YYYY-MM', value:'1.500' }] – Ratenänderungen
   sonderMap: new Map(),    // monatsindex (0-basiert) -> Sondertilgung (€)
-  view: 'month',           // 'month' | 'year'
+  view: 'month',           // 'month' | 'year' (Tabelle)
+  chartOpts: { granularity: 'auto', size: 'm', layout: 'grid' },
   result: null,
   charts: {},
 };
@@ -388,7 +389,9 @@ function renderTable(rows) {
    8. Diagramme (Chart.js)
 ---------------------------------------------------------- */
 function chartSeries(rows) {
-  if (rows.length >= 24) {
+  const g = state.chartOpts.granularity;
+  const yearly = g === 'year' || (g === 'auto' && rows.length >= 24);
+  if (yearly) {
     return aggregateYearly(rows).map((y) => ({
       label: String(y.year),
       interest: y.interest, principal: y.principal, sonder: y.sonder,
@@ -400,6 +403,15 @@ function chartSeries(rows) {
     interest: r.interest, principal: r.principal, sonder: r.sonder,
     balance: r.balance, cumInterest: r.cumInterest, cumPrincipal: r.cumPrincipal,
   }));
+}
+
+/** Wendet Größe/Layout an (CSS-Klassen) und zeichnet die Diagramme neu. */
+function applyChartControls() {
+  const card = document.getElementById('charts-card');
+  card.classList.remove('size-s', 'size-m', 'size-l');
+  card.classList.add('size-' + state.chartOpts.size);
+  document.getElementById('chartsGrid').classList.toggle('single', state.chartOpts.layout === 'single');
+  if (state.result) renderCharts(state.result.rows);
 }
 
 function renderCharts(rows) {
@@ -423,18 +435,36 @@ function renderCharts(rows) {
     x: { ticks: { color: colText, maxRotation: 0, autoSkip: true, maxTicksLimit: 12 }, grid: { color: colGrid } },
     y: { ticks: { color: colText, callback: euroTick }, grid: { color: colGrid }, beginAtZero: true },
   };
-  const legend = { labels: { color: colText } };
-  const tip = { callbacks: { label: (ctx) => `${ctx.dataset.label}: ${fmtEUR.format(ctx.parsed.y)}` } };
+  const legend = { labels: { color: colText, usePointStyle: true } };
+  // Tooltip im "index"-Modus: zeigt beim Hovern alle Werte des Zeitpunkts
+  const tooltip = {
+    enabled: true,
+    callbacks: {
+      title: (items) => (items.length ? items[0].label : ''),
+      label: (ctx) => `${ctx.dataset.label}: ${fmtEUR.format(ctx.parsed.y)}`,
+      footer: (items) => {
+        if (items.length < 2) return '';
+        const sum = items.reduce((a, it) => a + (it.parsed.y || 0), 0);
+        return 'Summe: ' + fmtEUR.format(sum);
+      },
+    },
+  };
+  const interaction = { mode: 'index', intersect: false };
+  const hover = { mode: 'index', intersect: false };
+  const baseOpts = {
+    responsive: true, maintainAspectRatio: false,
+    interaction, hover,
+    plugins: { legend, tooltip },
+  };
 
   state.charts.balance = new Chart(document.getElementById('chartBalance'), {
     type: 'line',
     data: { labels, datasets: [{
       label: 'Restschuld', data: s.map((d) => d.balance),
       borderColor: colTilgung, backgroundColor: colTilgung + '33',
-      fill: true, tension: 0.2, pointRadius: 0, borderWidth: 2,
+      fill: true, tension: 0.2, pointRadius: 0, pointHoverRadius: 4, borderWidth: 2,
     }] },
-    options: { responsive: true, maintainAspectRatio: false,
-      plugins: { legend, tooltip: tip }, scales: baseScales },
+    options: { ...baseOpts, scales: baseScales },
   });
 
   state.charts.composition = new Chart(document.getElementById('chartComposition'), {
@@ -444,8 +474,7 @@ function renderCharts(rows) {
       { label: 'Tilgung', data: s.map((d) => d.principal), backgroundColor: colTilgung },
       { label: 'Sondertilgung', data: s.map((d) => d.sonder), backgroundColor: colSonder },
     ] },
-    options: { responsive: true, maintainAspectRatio: false,
-      plugins: { legend, tooltip: tip },
+    options: { ...baseOpts,
       scales: { x: { ...baseScales.x, stacked: true }, y: { ...baseScales.y, stacked: true } } },
   });
 
@@ -453,12 +482,11 @@ function renderCharts(rows) {
     type: 'line',
     data: { labels, datasets: [
       { label: 'Kumulierte Zinsen', data: s.map((d) => d.cumInterest),
-        borderColor: colZins, backgroundColor: colZins + '22', fill: true, tension: 0.2, pointRadius: 0, borderWidth: 2 },
+        borderColor: colZins, backgroundColor: colZins + '22', fill: true, tension: 0.2, pointRadius: 0, pointHoverRadius: 4, borderWidth: 2 },
       { label: 'Kumulierte Tilgung', data: s.map((d) => d.cumPrincipal),
-        borderColor: colTilgung, backgroundColor: colTilgung + '22', fill: true, tension: 0.2, pointRadius: 0, borderWidth: 2 },
+        borderColor: colTilgung, backgroundColor: colTilgung + '22', fill: true, tension: 0.2, pointRadius: 0, pointHoverRadius: 4, borderWidth: 2 },
     ] },
-    options: { responsive: true, maintainAspectRatio: false,
-      plugins: { legend, tooltip: tip }, scales: baseScales },
+    options: { ...baseOpts, scales: baseScales },
   });
 }
 
@@ -478,35 +506,65 @@ function recalc() {
 /* ----------------------------------------------------------
    10. Export (Excel / PDF / CSV)
 ---------------------------------------------------------- */
+// Excel-Zahlenformate
+const XLS_EUR = '#,##0.00\\ €';
+const XLS_PCT = '0.00" %"';
+const XLS_INT = '0';
+
+/** Setzt für eine Spalte (0-basiert) ab Datenzeile 1 ein Zahlenformat. */
+function setColFormat(ws, range, col, fmt) {
+  for (let R = 1; R <= range.e.r; R++) {
+    const cell = ws[XLSX.utils.encode_cell({ r: R, c: col })];
+    if (cell && typeof cell.v === 'number') { cell.t = 'n'; cell.z = fmt; }
+  }
+}
+
 function exportXLS() {
   if (typeof XLSX === 'undefined') { alert('Excel-Bibliothek konnte nicht geladen werden (Internetverbindung?).'); return; }
   const { rows, summary } = state.result || {};
   if (!rows || !rows.length) { alert('Bitte zuerst eine Berechnung durchführen.'); return; }
 
-  const planData = rows.map((r) => ({
-    'Nr.': r.idx + 1,
-    'Monat': monthLabel(r.date),
-    'Zinssatz (% p.a.)': r.ratePct,
-    'Rate (€)': r.payment,
-    'Zinsen (€)': r.interest,
-    'Tilgung (€)': r.principal,
-    'Sondertilgung (€)': r.sonder,
-    'Restschuld (€)': r.balance,
-  }));
-  const summaryData = [
-    { Kennzahl: 'Kreditsumme', Wert: summary.principal },
-    { Kennzahl: 'Anzahl Raten', Wert: summary.months },
-    { Kennzahl: 'Tilgungsfreie Monate', Wert: summary.interestOnlyMonths },
-    { Kennzahl: 'Laufzeit (Jahre)', Wert: summary.years + summary.remMonths / 12 },
-    { Kennzahl: 'Summe Zinsen', Wert: summary.totalInterest },
-    { Kennzahl: 'Summe Sondertilgungen', Wert: summary.totalSonder },
-    { Kennzahl: 'Gesamtzahlungen', Wert: summary.totalPaid },
-    { Kennzahl: 'Restschuld am Ende', Wert: summary.endBalance },
+  /* --- Tilgungsplan (mit Phase-Spalte, jede Zelle formatiert) --- */
+  const planHeader = ['Nr.', 'Monat', 'Phase', 'Zinssatz (% p.a.)', 'Rate (€)',
+                      'Zinsen (€)', 'Tilgung (€)', 'Sondertilgung (€)', 'Restschuld (€)'];
+  const planAoa = [planHeader];
+  for (const r of rows) {
+    planAoa.push([
+      r.idx + 1, monthLabel(r.date), r.interestOnly ? 'Tilgungsfrei' : 'Tilgung',
+      r.ratePct, r.payment, r.interest, r.principal, r.sonder, r.balance,
+    ]);
+  }
+  const wsPlan = XLSX.utils.aoa_to_sheet(planAoa);
+  const planRange = XLSX.utils.decode_range(wsPlan['!ref']);
+  setColFormat(wsPlan, planRange, 0, XLS_INT);
+  setColFormat(wsPlan, planRange, 3, XLS_PCT);
+  [4, 5, 6, 7, 8].forEach((c) => setColFormat(wsPlan, planRange, c, XLS_EUR));
+  wsPlan['!cols'] = [{ wch: 5 }, { wch: 9 }, { wch: 12 }, { wch: 15 }, { wch: 13 },
+                     { wch: 13 }, { wch: 13 }, { wch: 15 }, { wch: 14 }];
+  wsPlan['!freeze'] = { xSplit: 0, ySplit: 1 };
+
+  /* --- Zusammenfassung (Werte formatiert) --- */
+  const sumAoa = [
+    ['Kennzahl', 'Wert'],
+    ['Kreditsumme', summary.principal, XLS_EUR],
+    ['Anzahl Raten', summary.months, XLS_INT],
+    ['Tilgungsfreie Monate', summary.interestOnlyMonths, XLS_INT],
+    ['Laufzeit (Jahre)', round2(summary.years + summary.remMonths / 12), '0.00'],
+    ['Summe Zinsen', summary.totalInterest, XLS_EUR],
+    ['Summe Sondertilgungen', summary.totalSonder, XLS_EUR],
+    ['Gesamtzahlungen', summary.totalPaid, XLS_EUR],
+    ['Restschuld am Ende', summary.endBalance, XLS_EUR],
   ];
+  const wsSum = XLSX.utils.aoa_to_sheet(sumAoa.map((r) => [r[0], r[1]]));
+  for (let i = 1; i < sumAoa.length; i++) {
+    const cell = wsSum[XLSX.utils.encode_cell({ r: i, c: 1 })];
+    if (cell) { cell.t = 'n'; cell.z = sumAoa[i][2]; }
+  }
+  wsSum['!cols'] = [{ wch: 24 }, { wch: 16 }];
 
   const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(summaryData), 'Zusammenfassung');
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(planData), 'Tilgungsplan');
+  XLSX.utils.book_append_sheet(wb, wsSum, 'Zusammenfassung');
+  XLSX.utils.book_append_sheet(wb, wsPlan, 'Tilgungsplan');
   XLSX.writeFile(wb, 'Tilgungsplan_Annuitaetendarlehen.xlsx');
 }
 
@@ -518,18 +576,51 @@ function exportPDF() {
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF();
 
+  const pageW = doc.internal.pageSize.getWidth();
+  const pageH = doc.internal.pageSize.getHeight();
+  const margin = 14;
+  const contentW = pageW - 2 * margin;
+
   doc.setFontSize(16);
-  doc.text('Tilgungsplan – Annuitätendarlehen', 14, 18);
+  doc.text('Tilgungsplan – Annuitätendarlehen', margin, 18);
   doc.setFontSize(10);
   const lines = [
     `Kreditsumme: ${fmtEUR.format(summary.principal)}`,
-    `Laufzeit: ${summary.years} Jahre ${summary.remMonths} Monate (${summary.months} Raten)`,
+    `Laufzeit: ${summary.years} Jahre ${summary.remMonths} Monate (${summary.months} Raten)` +
+      (summary.interestOnlyMonths > 0 ? `, davon ${summary.interestOnlyMonths} Mon. tilgungsfrei` : ''),
     `Summe Zinsen: ${fmtEUR.format(summary.totalInterest)}`,
     `Summe Sondertilgungen: ${fmtEUR.format(summary.totalSonder)}`,
     `Gesamtzahlungen: ${fmtEUR.format(summary.totalPaid)}`,
   ];
-  lines.forEach((t, i) => doc.text(t, 14, 28 + i * 6));
+  lines.forEach((t, i) => doc.text(t, margin, 28 + i * 6));
 
+  /* --- Grafiken einbetten --- */
+  let y = 28 + lines.length * 6 + 8;
+  const captions = {
+    balance: 'Restschuldverlauf',
+    composition: 'Zusammensetzung der Zahlungen (Zins / Tilgung / Sondertilgung)',
+    cumulative: 'Kumulierte Zinsen & Tilgung',
+  };
+  for (const key of ['balance', 'composition', 'cumulative']) {
+    const chart = state.charts[key];
+    if (!chart) continue;
+    let img;
+    try { img = chart.toBase64Image('image/png', 1); } catch (e) { continue; }
+    const ratio = (chart.height && chart.width) ? chart.height / chart.width : 0.42;
+    let h = contentW * ratio;
+    if (h > 70) h = 70;
+    if (y + h + 8 > pageH - margin) { doc.addPage(); y = margin; }
+    doc.setFontSize(9);
+    doc.text(captions[key], margin, y);
+    y += 3;
+    doc.addImage(img, 'PNG', margin, y, contentW, h);
+    y += h + 8;
+  }
+
+  /* --- Tilgungsplan-Tabelle auf neuer Seite --- */
+  doc.addPage();
+  doc.setFontSize(13);
+  doc.text('Tilgungsplan', margin, 16);
   const body = rows.map((r) => [
     r.idx + 1, monthLabel(r.date), fmtPct.format(r.ratePct) + ' %',
     fmtEUR.format(r.payment), fmtEUR.format(r.interest),
@@ -539,7 +630,7 @@ function exportPDF() {
   doc.autoTable({
     head: [['Nr.', 'Monat', 'Zins %', 'Rate', 'Zinsen', 'Tilgung', 'Sonder', 'Restschuld']],
     body,
-    startY: 28 + lines.length * 6 + 4,
+    startY: 22,
     styles: { fontSize: 7, cellPadding: 1.5 },
     headStyles: { fillColor: [13, 126, 140] },
     columnStyles: { 0: { halign: 'right' }, 3: { halign: 'right' }, 4: { halign: 'right' },
@@ -631,13 +722,25 @@ function bindEvents() {
     });
   });
 
-  /* --- Ansicht umschalten --- */
+  /* --- Ansicht umschalten (Tabelle) --- */
   document.querySelectorAll('.btn-toggle').forEach((btn) => {
     btn.addEventListener('click', () => {
       state.view = btn.dataset.view;
       document.querySelectorAll('.btn-toggle').forEach((b) => b.classList.toggle('is-active', b === btn));
       document.getElementById('editHint').style.display = state.view === 'month' ? '' : 'none';
       renderTable(state.result ? state.result.rows : []);
+    });
+  });
+
+  /* --- Diagramm-Regler (Raster / Größe / Layout) --- */
+  document.querySelectorAll('.chart-controls .btn-chip').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const group = btn.parentElement;
+      group.querySelectorAll('.btn-chip').forEach((b) => b.classList.toggle('is-active', b === btn));
+      if (btn.dataset.gran) state.chartOpts.granularity = btn.dataset.gran;
+      if (btn.dataset.size) state.chartOpts.size = btn.dataset.size;
+      if (btn.dataset.layout) state.chartOpts.layout = btn.dataset.layout;
+      applyChartControls();
     });
   });
 
@@ -700,4 +803,5 @@ function bindEvents() {
 bindEvents();
 renderPhaseList('rate');
 renderPhaseList('payment');
+applyChartControls();
 recalc();
