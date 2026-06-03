@@ -744,6 +744,24 @@ function bindEvents() {
     });
   });
 
+  /* --- Grafiken vergrößern (Vollbild) --- */
+  const btnMax = document.getElementById('btnMaximizeCharts');
+  function setMaximized(on) {
+    const card = document.getElementById('charts-card');
+    card.classList.toggle('maximized', on);
+    document.body.classList.toggle('no-scroll', on);
+    btnMax.textContent = on ? '✕ Schließen' : '⛶ Vergrößern';
+    if (state.result) renderCharts(state.result.rows);
+  }
+  btnMax.addEventListener('click', () => {
+    setMaximized(!document.getElementById('charts-card').classList.contains('maximized'));
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && document.getElementById('charts-card').classList.contains('maximized')) {
+      setMaximized(false);
+    }
+  });
+
   /* --- Sondertilgung in Tabelle editieren --- */
   document.getElementById('planBody').addEventListener('change', (e) => {
     const t = e.target;

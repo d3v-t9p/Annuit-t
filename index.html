@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="description" content="Kostenloser Annuitätendarlehen-Rechner mit dynamischem Tilgungsplan, Sondertilgungen, Zinsphasen, Grafiken und Export als Excel und PDF." />
   <title>Annuitätendarlehen-Rechner</title>
-  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="styles.css?v=3" />
 </head>
 <body>
   <header class="site-header">
@@ -147,26 +147,33 @@
 
     <!-- ====================== GRAFIKEN ====================== -->
     <section class="card" id="charts-card" aria-labelledby="h-charts">
-      <div class="card-head">
+      <div class="card-head charts-head">
         <h2 id="h-charts">4. Grafische Auswertung</h2>
         <div class="chart-controls">
           <div class="ctrl-group" role="group" aria-label="Datenraster">
             <span class="ctrl-label">Raster</span>
-            <button type="button" class="btn btn-chip is-active" data-gran="auto">Auto</button>
-            <button type="button" class="btn btn-chip" data-gran="month">Monat</button>
-            <button type="button" class="btn btn-chip" data-gran="year">Jahr</button>
+            <span class="ctrl-seg">
+              <button type="button" class="btn-chip is-active" data-gran="auto">Auto</button>
+              <button type="button" class="btn-chip" data-gran="month">Monat</button>
+              <button type="button" class="btn-chip" data-gran="year">Jahr</button>
+            </span>
           </div>
           <div class="ctrl-group" role="group" aria-label="Größe">
             <span class="ctrl-label">Größe</span>
-            <button type="button" class="btn btn-chip" data-size="s">S</button>
-            <button type="button" class="btn btn-chip is-active" data-size="m">M</button>
-            <button type="button" class="btn btn-chip" data-size="l">L</button>
+            <span class="ctrl-seg">
+              <button type="button" class="btn-chip" data-size="s">S</button>
+              <button type="button" class="btn-chip is-active" data-size="m">M</button>
+              <button type="button" class="btn-chip" data-size="l">L</button>
+            </span>
           </div>
           <div class="ctrl-group" role="group" aria-label="Layout">
             <span class="ctrl-label">Layout</span>
-            <button type="button" class="btn btn-chip is-active" data-layout="grid">Raster</button>
-            <button type="button" class="btn btn-chip" data-layout="single">Groß</button>
+            <span class="ctrl-seg">
+              <button type="button" class="btn-chip is-active" data-layout="grid">Raster</button>
+              <button type="button" class="btn-chip" data-layout="single">Groß</button>
+            </span>
           </div>
+          <button type="button" id="btnMaximizeCharts" class="btn btn-secondary btn-small">⛶ Vergrößern</button>
         </div>
       </div>
       <div class="charts-grid" id="chartsGrid">
@@ -229,6 +236,6 @@
   <script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js"></script>
 
   <!-- App -->
-  <script src="app.js"></script>
+  <script src="app.js?v=3"></script>
 </body>
 </html>
