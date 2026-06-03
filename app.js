@@ -511,12 +511,11 @@ const XLS_EUR = '#,##0.00\\ €';
 const XLS_PCT = '0.00" %"';
 const XLS_INT = '0';
 
-/** Setzt für eine Spalte (0-basiert) ab Datenzeile 1 ein Zahlenformat. */
-function setColFormat(ws, range, col, fmt) {
-  for (let R = 1; R <= range.e.r; R++) {
-    const cell = ws[XLSX.utils.encode_cell({ r: R, c: col })];
-    if (cell && typeof cell.v === 'number') { cell.t = 'n'; cell.z = fmt; }
-  }
+/** Numerische Zelle, optional mit Formel (f) und zwischengespeichertem Wert (v). */
+function xn(v, z, f) {
+  const cell = { t: 'n', v: round2(v), z };
+  if (f) cell.f = f;
+  return cell;
 }
 
 function exportXLS() {
@@ -524,47 +523,70 @@ function exportXLS() {
   const { rows, summary } = state.result || {};
   if (!rows || !rows.length) { alert('Bitte zuerst eine Berechnung durchführen.'); return; }
 
-  /* --- Tilgungsplan (mit Phase-Spalte, jede Zelle formatiert) --- */
-  const planHeader = ['Nr.', 'Monat', 'Phase', 'Zinssatz (% p.a.)', 'Rate (€)',
-                      'Zinsen (€)', 'Tilgung (€)', 'Sondertilgung (€)', 'Restschuld (€)'];
-  const planAoa = [planHeader];
-  for (const r of rows) {
-    planAoa.push([
-      r.idx + 1, monthLabel(r.date), r.interestOnly ? 'Tilgungsfrei' : 'Tilgung',
-      r.ratePct, r.payment, r.interest, r.principal, r.sonder, r.balance,
-    ]);
-  }
-  const wsPlan = XLSX.utils.aoa_to_sheet(planAoa);
-  const planRange = XLSX.utils.decode_range(wsPlan['!ref']);
-  setColFormat(wsPlan, planRange, 0, XLS_INT);
-  setColFormat(wsPlan, planRange, 3, XLS_PCT);
-  [4, 5, 6, 7, 8].forEach((c) => setColFormat(wsPlan, planRange, c, XLS_EUR));
-  wsPlan['!cols'] = [{ wch: 5 }, { wch: 9 }, { wch: 12 }, { wch: 15 }, { wch: 13 },
-                     { wch: 13 }, { wch: 13 }, { wch: 15 }, { wch: 14 }];
-  wsPlan['!freeze'] = { xSplit: 0, ySplit: 1 };
+  /* =========================================================
+     Tilgungsplan – berechnete Zellen enthalten Excel-Formeln
+     Spalten: A Nr. | B Monat | C Phase | D Zinssatz | E Restschuld Beginn |
+              F Zinsen | G Rate | H Tilgung | I Sondertilgung | J Restschuld Ende
+     ========================================================= */
+  const planHeader = ['Nr.', 'Monat', 'Phase', 'Zinssatz (% p.a.)', 'Restschuld Beginn (€)',
+                      'Zinsen (€)', 'Rate (€)', 'Tilgung (€)', 'Sondertilgung (€)', 'Restschuld Ende (€)'];
+  const wsPlan = {};
+  planHeader.forEach((h, c) => { wsPlan[XLSX.utils.encode_cell({ r: 0, c })] = { t: 's', v: h }; });
 
-  /* --- Zusammenfassung (Werte formatiert) --- */
-  const sumAoa = [
-    ['Kennzahl', 'Wert'],
-    ['Kreditsumme', summary.principal, XLS_EUR],
-    ['Anzahl Raten', summary.months, XLS_INT],
-    ['Tilgungsfreie Monate', summary.interestOnlyMonths, XLS_INT],
-    ['Laufzeit (Jahre)', round2(summary.years + summary.remMonths / 12), '0.00'],
-    ['Summe Zinsen', summary.totalInterest, XLS_EUR],
-    ['Summe Sondertilgungen', summary.totalSonder, XLS_EUR],
-    ['Gesamtzahlungen', summary.totalPaid, XLS_EUR],
-    ['Restschuld am Ende', summary.endBalance, XLS_EUR],
+  rows.forEach((r, i) => {
+    const R = i + 1;          // 0-basierte Zeile im Sheet
+    const xl = R + 1;         // Excel-Zeilennummer (1-basiert) dieser Datenzeile
+    const prevXl = xl - 1;    // vorherige Datenzeile (für i>0)
+    const put = (c, cell) => { wsPlan[XLSX.utils.encode_cell({ r: R, c })] = cell; };
+
+    put(0, { t: 'n', v: r.idx + 1, z: XLS_INT });
+    put(1, { t: 's', v: monthLabel(r.date) });
+    put(2, { t: 's', v: r.interestOnly ? 'Tilgungsfrei' : 'Tilgung' });
+    put(3, xn(r.ratePct, XLS_PCT));                                   // Zinssatz (Eingabe)
+    // Restschuld Beginn = Kreditsumme (erste Zeile) bzw. Restschuld Ende der Vorperiode
+    if (i === 0) put(4, xn(summary.principal, XLS_EUR));
+    else         put(4, xn(rows[i - 1].balance, XLS_EUR, `J${prevXl}`));
+    put(5, xn(r.interest, XLS_EUR, `ROUND(E${xl}*D${xl}/1200,2)`));   // Zinsen = Restschuld×Zinssatz/12
+    put(6, xn(r.payment, XLS_EUR));                                   // Rate (Eingabe/geplant)
+    put(7, xn(r.principal, XLS_EUR, `G${xl}-F${xl}`));                // Tilgung = Rate − Zinsen
+    put(8, xn(r.sonder, XLS_EUR));                                    // Sondertilgung (Eingabe)
+    put(9, xn(r.balance, XLS_EUR, `E${xl}-H${xl}-I${xl}`));           // Restschuld Ende
+  });
+
+  wsPlan['!ref'] = XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: rows.length, c: 9 } });
+  wsPlan['!cols'] = [{ wch: 5 }, { wch: 9 }, { wch: 12 }, { wch: 14 }, { wch: 18 },
+                     { wch: 13 }, { wch: 13 }, { wch: 13 }, { wch: 16 }, { wch: 18 }];
+  wsPlan['!freeze'] = { xSplit: 0, ySplit: 1 };
+  const lastRow = rows.length + 1; // letzte Excel-Datenzeile
+
+  /* =========================================================
+     Zusammenfassung – Summen als Formeln auf den Tilgungsplan
+     ========================================================= */
+  const sumRows = [
+    ['Kreditsumme',            xn(summary.principal, XLS_EUR)],
+    ['Anzahl Raten',           xn(summary.months, XLS_INT, `COUNT(Tilgungsplan!A2:A${lastRow})`)],
+    ['Tilgungsfreie Monate',   xn(summary.interestOnlyMonths, XLS_INT, `COUNTIF(Tilgungsplan!C2:C${lastRow},"Tilgungsfrei")`)],
+    ['Laufzeit (Jahre)',       xn(summary.years + summary.remMonths / 12, '0.00')],
+    ['Summe Zinsen',           xn(summary.totalInterest, XLS_EUR, `SUM(Tilgungsplan!F2:F${lastRow})`)],
+    ['Summe Sondertilgungen',  xn(summary.totalSonder, XLS_EUR, `SUM(Tilgungsplan!I2:I${lastRow})`)],
+    ['Gesamtzahlungen',        xn(summary.totalPaid, XLS_EUR, `SUM(Tilgungsplan!G2:G${lastRow})+SUM(Tilgungsplan!I2:I${lastRow})`)],
+    ['Restschuld am Ende',     xn(summary.endBalance, XLS_EUR, `Tilgungsplan!J${lastRow}`)],
   ];
-  const wsSum = XLSX.utils.aoa_to_sheet(sumAoa.map((r) => [r[0], r[1]]));
-  for (let i = 1; i < sumAoa.length; i++) {
-    const cell = wsSum[XLSX.utils.encode_cell({ r: i, c: 1 })];
-    if (cell) { cell.t = 'n'; cell.z = sumAoa[i][2]; }
-  }
-  wsSum['!cols'] = [{ wch: 24 }, { wch: 16 }];
+  const wsSum = {};
+  wsSum[XLSX.utils.encode_cell({ r: 0, c: 0 })] = { t: 's', v: 'Kennzahl' };
+  wsSum[XLSX.utils.encode_cell({ r: 0, c: 1 })] = { t: 's', v: 'Wert' };
+  sumRows.forEach((row, i) => {
+    wsSum[XLSX.utils.encode_cell({ r: i + 1, c: 0 })] = { t: 's', v: row[0] };
+    wsSum[XLSX.utils.encode_cell({ r: i + 1, c: 1 })] = row[1];
+  });
+  wsSum['!ref'] = XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: sumRows.length, c: 1 } });
+  wsSum['!cols'] = [{ wch: 24 }, { wch: 18 }];
 
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, wsSum, 'Zusammenfassung');
   XLSX.utils.book_append_sheet(wb, wsPlan, 'Tilgungsplan');
+  // Beim Öffnen neu berechnen lassen, damit Formeln sofort greifen
+  wb.Workbook = { CalcPr: { fullCalcOnLoad: true } };
   XLSX.writeFile(wb, 'Tilgungsplan_Annuitaetendarlehen.xlsx');
 }
 
