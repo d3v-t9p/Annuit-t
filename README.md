@@ -3,7 +3,7 @@
 Eine kostenlose, rein im Browser laufende Website zur Berechnung von **Annuitätendarlehen**:
 Tilgungsplan, Sondertilgungen, variable Zinssätze, grafische Auswertung und Export als **Excel** und **PDF**.
 
-👉 **Live-Demo:** *(nach Aktivierung von GitHub Pages hier eintragen, z. B. https://d3v-t9p.github.io/Annuit-t/)*
+👉 **Live-Demo:** *. https://d3v-t9p.github.io/Annuit-t/)*
 
 ---
 
